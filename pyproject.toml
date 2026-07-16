@@ -1,44 +1,20 @@
-[project]
-name = "consumer-complaint-dispute-prediction"
-version = "0.1.0"
-description = "Production-grade MLOps project predicting whether a customer will dispute a company's complaint resolution."
-readme = "README.md"
-requires-python = ">=3.12"
+[tool.poetry]
+name = "customer-mlops"
+version = "1.0.0"
+description = "MLOps pipeline for Consumer Complaint Dispute Prediction"
+authors = ["Your Name"]
 
-dependencies = [
-    "
-numpy>=2.2",
-    "pandas>=2.3",
-    "scikit-learn>=1.7",
-    "lightgbm>=4.6",
-    "xgboost>=3.0",
-    "shap>=0.49",
+[tool.poetry.dependencies]
+python = "^3.12"
+zenml = "0.96.1"
+mlflow = "3.14.0"
+evidently = "0.7.21"
+scikit-learn = "1.9.0"
+xgboost = "3.3.0"
+lightgbm = "4.6.0"
+numpy = "*"
+pandas = "*"
 
-    "matplotlib>=3.10",
-    "plotly>=6.3",
-
-    "fastapi>=0.116",
-    "uvicorn[standard]>=0.35",
-
-    "pydantic>=2.11",
-
-    "sqlalchemy>=2.0",
-    "psycopg2-binary>=2.9",
-
-    "mlflow>=3.2",
-    "evidently>=0.7",
-
-    "pyyaml>=6.0",
-
-    "joblib>=1.5",
-
-    "jupyterlab>=4.4",
-]
-
-[dependency-groups]
-dev = [
-    "pytest>=8.4",
-    "ruff>=0.12",
-    "black>=25.1",
-    "pre-commit>=4.3",
-]
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

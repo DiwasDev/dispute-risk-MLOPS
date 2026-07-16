@@ -19,7 +19,7 @@ Financial institutions receive thousands of consumer complaints every month, but
 - **Business outcome**: Fewer disputes reaching CFPB/escalation; better use of senior-agent time (simulated, not measured against a real business)
 - **Product metric**: % of eventual disputes caught in the high-risk queue at a given queue capacity
 - **Model metric**: PR-AUC (comparison), Recall@precision / F2 (operating threshold)
-- **Data quality metric**: null rates (especially `Consumer complaint narrative`, which is ~84% null in places), schema validity, category drift over time
+- **Data quality metric**: null rates (especially `Consumer complaint narrative`, which is ~84% null in places, and tag ~86% null), schema validity, category drift over time
 
 ## Data Summary
 - **Rows**: ~358,810 labeled complaints (Dec 2011 – Sep 2016)

@@ -1,19 +1,18 @@
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-.ruff_cache/
-mlruns/
-data/raw/*
-data/processed/*
-data/external/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-.aider*
-data/
+# Ignore virtual environments
 venv/
-.idea/
-.ipynb_checkpoints/
-.aigignore
-AGENTS.md
+
+# Ignore data directory
+data/
+
+# Ignore local MLOps tabular folder
+mlops-tabular/
+
+# Ignore tab-completion / cache files
+.pytest_cache/
+__pycache__/
+
+# Ignore tab-completion / cache files
+.pytest_cache/
+__pycache__/
 .claude/
+mlruns/

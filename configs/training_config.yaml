@@ -1,0 +1,145 @@
+# =============================================================================
+# training_config.yaml
+# =============================================================================
+# Single source of truth for all training hyperparameters and data references.
+#
+# Reproducibility contract (all four elements pinned here):
+#   1. Data snapshot  — data.snapshot_id
+#   2. Library versions — pinned in pyproject.toml / venv
+#   3. Code version   — git commit hash logged at runtime by training step
+#   4. Configuration  — this file, logged verbatim to MLflow with every run
+#
+# NEVER hardcode these values in Python. Change a value here and rerun —
+# you get a new tracked experiment. Code stays unchanged.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Data
+# ---------------------------------------------------------------------------
+data:
+  # Snapshot ID is a human-readable label recorded in MLflow.
+  # When you retrain on a new data export, increment this (e.g., complaints_2016_q3).
+  # This ties every MLflow run to the exact data version used.
+  snapshot_id: "complaints_2011_2016_full"
+
+  # Path to the raw CSV. Override via CLI or environment variable for CI runs.
+  csv_path: "data/complaints.csv"
+
+  # Time-based split cutoff (ISO date).
+  # Train: Date received < split_date  (~298K rows, Dec 2011 – Dec 2015)
+  # Val:   Date received >= split_date (~60K rows,  Jan 2016 – Sep 2016)
+  # Why this date: captures ~83% of the dataset in training while leaving
+  # a full 9-month holdout period that is strictly in the future relative
+  # to training — mirrors production use.
+  split_date: "2016-01-01"
+
+  # Target column name (used for encoding and leakage checks).
+  target_column: "Consumer disputed?"
+
+# ---------------------------------------------------------------------------
+# Experiment tracking
+# ---------------------------------------------------------------------------
+experiment:
+  # MLflow experiment name. All runs appear under this experiment in the UI.
+  name: "complaint-dispute-prediction"
+
+  # Global random seed. Controls train/val shuffling, model init, CV splits.
+  # Fix this so two runs with the same config produce identical results.
+  random_seed: 42
+
+  # Number of stratified CV folds for cross-validation (used in evaluation).
+  cv_folds: 5
+
+# ---------------------------------------------------------------------------
+# Model configuration
+# ---------------------------------------------------------------------------
+model:
+  # Which model to train in this run.
+  # Supported: "logistic_regression" | "xgboost" | "lightgbm"
+  # Start with logistic_regression — it IS the baseline. Do not skip it.
+  active: "logistic_regression"
+
+  # Whether to include StandardScaler before the model in the full pipeline.
+  # True for linear models (required). False for trees (no effect, but clean).
+  include_scaler: true
+
+  # --- Logistic Regression ---
+  # C: inverse of regularization strength. Smaller = stronger regularization.
+  # class_weight: "balanced" re-weights minority class proportional to its rarity.
+  #   Effect: same as oversampling the minority class without creating duplicates.
+  #   For 21% positive rate (1:4 ratio), "balanced" is a reasonable starting point.
+  #   We will tune the threshold separately after training.
+  # max_iter: 1000 is safe for this feature dimensionality (~50 features after OHE).
+  # solver: "lbfgs" is the best default for L2 penalty on tabular binary classification.
+  logistic_regression:
+    C: 1.0
+    class_weight: "balanced"
+    max_iter: 1000
+    solver: "lbfgs"
+    random_state: 42  # must match experiment.random_seed
+
+  # --- XGBoost ---
+  # n_estimators: number of boosting rounds.
+  # max_depth: tree depth. 6 is the XGBoost default; start here.
+  # learning_rate (eta): smaller = slower but more robust generalization.
+  # subsample / colsample_bytree: row/column sampling — implicit regularization.
+  # scale_pos_weight: ratio of negative to positive class (approx (1-0.21)/0.21 ≈ 3.76).
+  #   Sets the loss weight for the positive class, equivalent to class_weight="balanced".
+  # eval_metric: "aucpr" directly optimizes the PR-AUC north-star metric.
+  # use_label_encoder: deprecated in XGBoost >= 1.6, must be False.
+  xgboost:
+    n_estimators: 300
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    scale_pos_weight: 3.76   # (1 - 0.21) / 0.21 ≈ 3.76
+    eval_metric: "aucpr"
+    random_state: 42
+    n_jobs: -1
+
+  # --- LightGBM ---
+  # num_leaves: controls tree complexity. Default 31; larger = more expressive.
+  # min_child_samples: minimum data in a leaf (regularization).
+  # is_unbalance: equivalent to scale_pos_weight="balanced". Use one or the other.
+  lightgbm:
+    n_estimators: 300
+    num_leaves: 63
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_samples: 20
+    is_unbalance: true
+    random_state: 42
+    n_jobs: -1
+    verbose: -1
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+evaluation:
+  # Operating threshold: probability above which a complaint is routed to senior queue.
+  # Start at 0.5 (logistic regression default). Threshold tuning will find the optimal
+  # value on the validation set in the evaluate step.
+  threshold: 0.5
+
+  # Number of bootstrap resamples for 95% confidence intervals.
+  # 1000 is the minimum for reliable 2.5th/97.5th percentile estimates.
+  # 2000 for publication-quality intervals.
+  bootstrap_iterations: 1000
+
+  # Business slices to evaluate separately. Each slice is a column in the dataset.
+  # These columns exist at intake time — no leakage.
+  # Why these slices:
+  #   Product: dispute rates differ by product type (mortgages vs credit cards).
+  #   Submitted via: web vs phone vs referral may differ in dispute patterns.
+  #   Tags: servicemember / older American — regulatory-sensitive groups.
+  slice_columns:
+    - "Product"
+    - "Submitted via"
+    - "Tags"
+
+  # F-beta score beta parameter.
+  # beta=2 weights recall twice as much as precision, matching the stated cost
+  # asymmetry: false negatives (missed disputes) cost more than false positives.
+  f_beta: 2
