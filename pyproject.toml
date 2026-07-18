@@ -14,6 +14,9 @@ xgboost = "3.3.0"
 lightgbm = "4.6.0"
 numpy = "*"
 pandas = "*"
+passlib = "*"
+sqlmodel = "*"
+
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
