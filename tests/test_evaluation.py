@@ -22,12 +22,10 @@ Run with:
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 import yaml
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -45,8 +43,7 @@ from core.evaluation import (
     run_evaluation,
     tune_threshold,
 )
-from core.training import TrainingConfig, load_config
-
+from core.training import load_config
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -69,22 +66,32 @@ def _make_X_y(n: int = 200, seed: int = 42) -> tuple[pd.DataFrame, pd.Series]:
         return vals
 
     dates = pd.date_range("2014-01-01", "2016-06-01", periods=n)
-    X = pd.DataFrame({
-        "Date received": dates.strftime("%Y-%m-%d"),
-        "Product": choice(PRODUCTS, n),
-        "Sub-product": choice(["Conventional fixed mortgage", "Other"], n, null_rate=0.3),
-        "Issue": choice(ISSUES, n),
-        "Sub-issue": choice(["Info belongs to someone else", None], n, null_rate=0.6),
-        "Consumer complaint narrative": choice(["Long complaint.", None], n, null_rate=0.8),
-        "Company": choice(COMPANIES, n),
-        "State": choice(STATES, n, null_rate=0.01),
-        "ZIP code": choice(["30134", "90001"], n),
-        "Tags": choice(["Older American", "Servicemember", None], n, null_rate=0.85),
-        "Consumer consent provided?": choice(
-            ["Consent not provided", "Consent provided", None], n, null_rate=0.7
-        ),
-        "Submitted via": choice(["Web", "Referral", "Phone", "Postal mail"], n),
-    })
+    X = pd.DataFrame(
+        {
+            "Date received": dates.strftime("%Y-%m-%d"),
+            "Product": choice(PRODUCTS, n),
+            "Sub-product": choice(
+                ["Conventional fixed mortgage", "Other"], n, null_rate=0.3
+            ),
+            "Issue": choice(ISSUES, n),
+            "Sub-issue": choice(
+                ["Info belongs to someone else", None], n, null_rate=0.6
+            ),
+            "Consumer complaint narrative": choice(
+                ["Long complaint.", None], n, null_rate=0.8
+            ),
+            "Company": choice(COMPANIES, n),
+            "State": choice(STATES, n, null_rate=0.01),
+            "ZIP code": choice(["30134", "90001"], n),
+            "Tags": choice(
+                ["Older American", "Servicemember", None], n, null_rate=0.85
+            ),
+            "Consumer consent provided?": choice(
+                ["Consent not provided", "Consent provided", None], n, null_rate=0.7
+            ),
+            "Submitted via": choice(["Web", "Referral", "Phone", "Postal mail"], n),
+        }
+    )
     y = pd.Series(rng.integers(0, 2, size=n), name=TARGET_COLUMN)
     return X, y
 
@@ -115,20 +122,34 @@ def _make_config_yaml(tmp_path: Path) -> Path:
             "active": "logistic_regression",
             "include_scaler": True,
             "logistic_regression": {
-                "C": 1.0, "class_weight": "balanced",
-                "max_iter": 100, "solver": "lbfgs", "random_state": 42,
+                "C": 1.0,
+                "class_weight": "balanced",
+                "max_iter": 100,
+                "solver": "lbfgs",
+                "random_state": 42,
             },
             "xgboost": {
-                "n_estimators": 5, "max_depth": 3, "learning_rate": 0.1,
-                "subsample": 0.8, "colsample_bytree": 0.8,
-                "scale_pos_weight": 3.76, "eval_metric": "aucpr",
-                "random_state": 42, "n_jobs": 1,
+                "n_estimators": 5,
+                "max_depth": 3,
+                "learning_rate": 0.1,
+                "subsample": 0.8,
+                "colsample_bytree": 0.8,
+                "scale_pos_weight": 3.76,
+                "eval_metric": "aucpr",
+                "random_state": 42,
+                "n_jobs": 1,
             },
             "lightgbm": {
-                "n_estimators": 5, "num_leaves": 15, "learning_rate": 0.1,
-                "subsample": 0.8, "colsample_bytree": 0.8,
-                "min_child_samples": 5, "is_unbalance": True,
-                "random_state": 42, "n_jobs": 1, "verbose": -1,
+                "n_estimators": 5,
+                "num_leaves": 15,
+                "learning_rate": 0.1,
+                "subsample": 0.8,
+                "colsample_bytree": 0.8,
+                "min_child_samples": 5,
+                "is_unbalance": True,
+                "random_state": 42,
+                "n_jobs": 1,
+                "verbose": -1,
             },
         },
         "evaluation": {
@@ -179,12 +200,20 @@ class TestComputeThresholdMetrics:
         """
         # High recall, low precision case
         y_true = np.array([1, 1, 1, 0, 0])
-        y_proba = np.array([0.8, 0.7, 0.6, 0.9, 0.85])  # 2 false positives, but catches all 3
-        m_high_recall = compute_threshold_metrics(y_true, y_proba, threshold=0.55, beta=2)
+        y_proba = np.array(
+            [0.8, 0.7, 0.6, 0.9, 0.85]
+        )  # 2 false positives, but catches all 3
+        m_high_recall = compute_threshold_metrics(
+            y_true, y_proba, threshold=0.55, beta=2
+        )
 
         # Low recall, high precision case
-        y_proba2 = np.array([0.9, 0.3, 0.3, 0.1, 0.1])  # only catches 1/3, but perfectly
-        m_low_recall = compute_threshold_metrics(y_true, y_proba2, threshold=0.5, beta=2)
+        y_proba2 = np.array(
+            [0.9, 0.3, 0.3, 0.1, 0.1]
+        )  # only catches 1/3, but perfectly
+        m_low_recall = compute_threshold_metrics(
+            y_true, y_proba2, threshold=0.5, beta=2
+        )
 
         # F2 should prefer high recall over high precision
         assert m_high_recall.f2 >= m_low_recall.f2
@@ -211,6 +240,7 @@ class TestComputeThresholdMetrics:
 class TestBootstrapCI:
     def test_returns_confidence_interval(self):
         from sklearn.metrics import average_precision_score
+
         y_true = np.array([1, 0, 1, 0, 1, 0, 1, 0] * 10)
         y_proba = np.random.RandomState(0).rand(80)
         ci = bootstrap_ci(y_true, y_proba, average_precision_score, n_iters=100)
@@ -219,14 +249,18 @@ class TestBootstrapCI:
     def test_lower_le_point_le_upper(self):
         """The point estimate should lie within the CI."""
         from sklearn.metrics import average_precision_score
+
         y_true = np.array([1, 0] * 40)
         y_proba = np.random.RandomState(42).rand(80)
-        ci = bootstrap_ci(y_true, y_proba, average_precision_score, n_iters=200, seed=42)
+        ci = bootstrap_ci(
+            y_true, y_proba, average_precision_score, n_iters=200, seed=42
+        )
         assert ci.lower <= ci.point_estimate <= ci.upper
 
     def test_ci_width_bounded(self):
         """CI width should be non-negative and ≤ 1 for a [0,1]-bounded metric."""
         from sklearn.metrics import average_precision_score
+
         y_true = np.array([1, 0] * 50)
         y_proba = np.random.RandomState(7).rand(100)
         ci = bootstrap_ci(y_true, y_proba, average_precision_score, n_iters=200, seed=7)
@@ -235,6 +269,7 @@ class TestBootstrapCI:
 
     def test_bootstrap_count_recorded(self):
         from sklearn.metrics import average_precision_score
+
         y_true = np.array([1, 0] * 20)
         y_proba = np.random.RandomState(1).rand(40)
         ci = bootstrap_ci(y_true, y_proba, average_precision_score, n_iters=150, seed=1)
@@ -242,10 +277,15 @@ class TestBootstrapCI:
 
     def test_reproducible_with_same_seed(self):
         from sklearn.metrics import average_precision_score
+
         y_true = np.array([1, 0] * 30)
         y_proba = np.random.RandomState(99).rand(60)
-        ci1 = bootstrap_ci(y_true, y_proba, average_precision_score, n_iters=100, seed=42)
-        ci2 = bootstrap_ci(y_true, y_proba, average_precision_score, n_iters=100, seed=42)
+        ci1 = bootstrap_ci(
+            y_true, y_proba, average_precision_score, n_iters=100, seed=42
+        )
+        ci2 = bootstrap_ci(
+            y_true, y_proba, average_precision_score, n_iters=100, seed=42
+        )
         assert ci1.lower == ci2.lower
         assert ci1.upper == ci2.upper
 
@@ -279,7 +319,9 @@ class TestTuneThreshold:
         # Give the model some signal to work with
         y_proba = np.clip(y_true * 0.5 + rng.rand(200) * 0.5, 0, 1)
 
-        default_metrics = compute_threshold_metrics(y_true, y_proba, threshold=0.5, beta=2)
+        default_metrics = compute_threshold_metrics(
+            y_true, y_proba, threshold=0.5, beta=2
+        )
         _, tuned_metrics = tune_threshold(y_true, y_proba, beta=2)
 
         assert tuned_metrics.f2 >= default_metrics.f2 - 1e-6  # tuned ≥ default
@@ -337,8 +379,12 @@ class TestEvaluateSlices:
         X, y = _make_X_y(n=300)
         y_proba = np.random.RandomState(0).rand(len(y))
         results = evaluate_slices(
-            X_val=X, y_val=y, y_proba=y_proba,
-            slice_columns=["Product"], threshold=0.5, min_slice_size=10,
+            X_val=X,
+            y_val=y,
+            y_proba=y_proba,
+            slice_columns=["Product"],
+            threshold=0.5,
+            min_slice_size=10,
         )
         assert all(r.slice_column == "Product" for r in results)
 
@@ -348,8 +394,11 @@ class TestEvaluateSlices:
         y_proba = np.random.RandomState(0).rand(len(y))
         # This should not raise
         results = evaluate_slices(
-            X_val=X, y_val=y, y_proba=y_proba,
-            slice_columns=["NonexistentColumn"], threshold=0.5,
+            X_val=X,
+            y_val=y,
+            y_proba=y_proba,
+            slice_columns=["NonexistentColumn"],
+            threshold=0.5,
         )
         assert results == []
 
@@ -357,8 +406,12 @@ class TestEvaluateSlices:
         X, y = _make_X_y(n=300)
         y_proba = np.random.RandomState(5).rand(len(y))
         results = evaluate_slices(
-            X_val=X, y_val=y, y_proba=y_proba,
-            slice_columns=["Product"], threshold=0.5, min_slice_size=10,
+            X_val=X,
+            y_val=y,
+            y_proba=y_proba,
+            slice_columns=["Product"],
+            threshold=0.5,
+            min_slice_size=10,
         )
         for r in results:
             if r.pr_auc is not None:
@@ -368,8 +421,12 @@ class TestEvaluateSlices:
         X, y = _make_X_y(n=300)
         y_proba = np.random.RandomState(0).rand(len(y))
         results = evaluate_slices(
-            X_val=X, y_val=y, y_proba=y_proba,
-            slice_columns=["Product"], threshold=0.5, min_slice_size=1,
+            X_val=X,
+            y_val=y,
+            y_proba=y_proba,
+            slice_columns=["Product"],
+            threshold=0.5,
+            min_slice_size=1,
         )
         total = sum(r.n_samples for r in results)
         # All slice samples should sum to total rows (each row belongs to exactly one Product)
@@ -392,6 +449,7 @@ class TestRunEvaluation:
     @staticmethod
     def _setup_mlflow(tmp_path, monkeypatch):
         import mlflow
+
         db = tmp_path / "mlflow.db"
         monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
         mlflow.set_tracking_uri(f"sqlite:///{db}")

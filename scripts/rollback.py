@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 
@@ -51,8 +52,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
-
-import os
 
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
 MODEL_NAME = os.getenv("MODEL_NAME", "dispute-risk-model")
@@ -86,7 +85,9 @@ def rollback(
 
     logger.info(
         "ROLLBACK INITIATED for model='%s'. dry_run=%s target_version=%s",
-        MODEL_NAME, dry_run, target_version or "auto (from tag)",
+        MODEL_NAME,
+        dry_run,
+        target_version or "auto (from tag)",
     )
 
     # --- Step 1: Identify current champion ---
@@ -126,13 +127,18 @@ def rollback(
 
     logger.info(
         "Rolling back from version=%s to version=%s.",
-        current_version, target_version,
+        current_version,
+        target_version,
     )
 
     # --- Step 3: Verify target version exists ---
     try:
         target = client.get_model_version(MODEL_NAME, target_version)
-        logger.info("Rollback target confirmed: version=%s status=%s", target_version, target.status)
+        logger.info(
+            "Rollback target confirmed: version=%s status=%s",
+            target_version,
+            target.status,
+        )
     except Exception as exc:
         logger.error("Target version %s not found: %s", target_version, exc)
         return False
@@ -142,7 +148,9 @@ def rollback(
         logger.info(
             "[DRY RUN] Would reassign @champion from version=%s to version=%s. "
             "Estimated time to this point: %.1fs",
-            current_version, target_version, elapsed,
+            current_version,
+            target_version,
+            elapsed,
         )
         return True
 
@@ -157,12 +165,15 @@ def rollback(
     logger.info(
         "ROLLBACK COMPLETE in %.1fs. @champion is now version=%s (was %s). "
         "Restart the API service or wait for /health to confirm the new version is serving.",
-        elapsed, target_version, current_version,
+        elapsed,
+        target_version,
+        current_version,
     )
 
     # Log rollback event as a registered model tag for audit trail
     try:
         import datetime
+
         client.set_registered_model_tag(
             MODEL_NAME,
             "last_rollback",

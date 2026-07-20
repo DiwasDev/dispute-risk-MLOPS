@@ -64,8 +64,8 @@ logger = logging.getLogger(__name__)
 # PSI thresholds (architecture.md §6)
 # ---------------------------------------------------------------------------
 
-PSI_STABLE: float = 0.10       # < 0.10 → no action
-PSI_MODERATE: float = 0.25     # 0.10–0.25 → investigate
+PSI_STABLE: float = 0.10  # < 0.10 → no action
+PSI_MODERATE: float = 0.25  # 0.10–0.25 → investigate
 # > 0.25 → significant, trigger retraining review
 
 # KS / Chi-squared significance level
@@ -92,9 +92,7 @@ NUMERIC_FEATURES: list[str] = [
 ]
 
 # All features we run drift detection on
-MONITORED_FEATURES: list[str] = (
-    CATEGORICAL_FEATURES + HIGH_CARDINALITY_FEATURES
-)
+MONITORED_FEATURES: list[str] = CATEGORICAL_FEATURES + HIGH_CARDINALITY_FEATURES
 
 DriftVerdict = Literal["stable", "moderate", "significant"]
 
@@ -110,8 +108,8 @@ class FeatureDriftResult:
 
     feature: str
     method: Literal["psi", "ks", "chi2"]
-    statistic: float         # PSI value, KS statistic, or chi2 statistic
-    pvalue: float | None     # None for PSI (threshold-based, not p-value-based)
+    statistic: float  # PSI value, KS statistic, or chi2 statistic
+    pvalue: float | None  # None for PSI (threshold-based, not p-value-based)
     verdict: DriftVerdict
     message: str
 
@@ -171,7 +169,9 @@ class DriftReport:
     def has_drift(self) -> bool:
         """Any feature or prediction drift detected (moderate or significant)."""
         feature_drift = any(r.is_drifted for r in self.feature_results)
-        pred_drift = self.prediction_result is not None and self.prediction_result.is_drifted
+        pred_drift = (
+            self.prediction_result is not None and self.prediction_result.is_drifted
+        )
         return feature_drift or pred_drift
 
     @property
@@ -196,7 +196,11 @@ class DriftReport:
 
     def summary(self) -> str:
         """Human-readable one-paragraph summary."""
-        status = "RETRAIN" if self.needs_retraining else ("DRIFT" if self.has_drift else "STABLE")
+        status = (
+            "RETRAIN"
+            if self.needs_retraining
+            else ("DRIFT" if self.has_drift else "STABLE")
+        )
         lines = [
             f"[{status}] ref={self.reference_rows:,} rows | current={self.current_rows:,} rows",
             f"Features monitored: {len(self.feature_results)}",
@@ -258,7 +262,10 @@ def compute_psi_numeric(
     if len(ref_clean) == 0 or len(cur_clean) == 0:
         logger.warning("PSI: empty series for feature '%s'. Returning PSI=0.", feature)
         return FeatureDriftResult(
-            feature=feature, method="psi", statistic=0.0, pvalue=None,
+            feature=feature,
+            method="psi",
+            statistic=0.0,
+            pvalue=None,
             verdict="stable",
             message=f"'{feature}': insufficient data for PSI (ref={len(ref_clean)}, cur={len(cur_clean)}).",
         )
@@ -270,7 +277,7 @@ def compute_psi_numeric(
     bin_edges[-1] += 1e-6
 
     ref_counts, _ = np.histogram(ref_clean, bins=bin_edges)
-    cur_counts, _ = np.histogram(cur_clean, bins=bin_edges) 
+    cur_counts, _ = np.histogram(cur_clean, bins=bin_edges)
 
     # Convert to proportions; clip to avoid log(0)
     ref_pct = np.clip(ref_counts / len(ref_clean), 1e-6, None)
@@ -286,8 +293,12 @@ def compute_psi_numeric(
     )
     logger.info(msg)
     return FeatureDriftResult(
-        feature=feature, method="psi", statistic=psi, pvalue=None,
-        verdict=verdict, message=msg,
+        feature=feature,
+        method="psi",
+        statistic=psi,
+        pvalue=None,
+        verdict=verdict,
+        message=msg,
     )
 
 
@@ -323,7 +334,10 @@ def compute_psi_categorical(
     if len(ref_clean) == 0 or len(cur_clean) == 0:
         logger.warning("PSI categorical: empty series for feature '%s'.", feature)
         return FeatureDriftResult(
-            feature=feature, method="psi", statistic=0.0, pvalue=None,
+            feature=feature,
+            method="psi",
+            statistic=0.0,
+            pvalue=None,
             verdict="stable",
             message=f"'{feature}': insufficient data for categorical PSI.",
         )
@@ -342,8 +356,12 @@ def compute_psi_categorical(
     # All categories present in reference after bucketing
     all_cats = set(ref_bucketed.unique()) | {"_other_"}
 
-    ref_pct = ref_bucketed.value_counts(normalize=True).reindex(all_cats, fill_value=0.0)
-    cur_pct = cur_bucketed.value_counts(normalize=True).reindex(all_cats, fill_value=0.0)
+    ref_pct = ref_bucketed.value_counts(normalize=True).reindex(
+        all_cats, fill_value=0.0
+    )
+    cur_pct = cur_bucketed.value_counts(normalize=True).reindex(
+        all_cats, fill_value=0.0
+    )
 
     # Clip to avoid log(0)
     ref_pct_arr = np.clip(ref_pct.values, 1e-6, None)
@@ -358,8 +376,12 @@ def compute_psi_categorical(
     )
     logger.info(msg)
     return FeatureDriftResult(
-        feature=feature, method="psi", statistic=psi, pvalue=None,
-        verdict=verdict, message=msg,
+        feature=feature,
+        method="psi",
+        statistic=psi,
+        pvalue=None,
+        verdict=verdict,
+        message=msg,
     )
 
 
@@ -395,7 +417,10 @@ def compute_ks(
     if len(ref_clean) < 10 or len(cur_clean) < 10:
         logger.warning("KS: too few samples for feature '%s'. Skipping.", feature)
         return FeatureDriftResult(
-            feature=feature, method="ks", statistic=0.0, pvalue=1.0,
+            feature=feature,
+            method="ks",
+            statistic=0.0,
+            pvalue=1.0,
             verdict="stable",
             message=f"'{feature}': insufficient samples for KS test.",
         )
@@ -415,8 +440,12 @@ def compute_ks(
     )
     logger.info(msg)
     return FeatureDriftResult(
-        feature=feature, method="ks", statistic=ks_stat, pvalue=pvalue,
-        verdict=verdict, message=msg,
+        feature=feature,
+        method="ks",
+        statistic=ks_stat,
+        pvalue=pvalue,
+        verdict=verdict,
+        message=msg,
     )
 
 
@@ -452,7 +481,10 @@ def compute_chi2(
     if len(ref_clean) < 5 or len(cur_clean) < 5:
         logger.warning("Chi2: too few samples for feature '%s'. Skipping.", feature)
         return FeatureDriftResult(
-            feature=feature, method="chi2", statistic=0.0, pvalue=1.0,
+            feature=feature,
+            method="chi2",
+            statistic=0.0,
+            pvalue=1.0,
             verdict="stable",
             message=f"'{feature}': insufficient samples for chi-squared test.",
         )
@@ -484,8 +516,12 @@ def compute_chi2(
     )
     logger.info(msg)
     return FeatureDriftResult(
-        feature=feature, method="chi2", statistic=chi2_stat, pvalue=pvalue,
-        verdict=verdict, message=msg,
+        feature=feature,
+        method="chi2",
+        statistic=chi2_stat,
+        pvalue=pvalue,
+        verdict=verdict,
+        message=msg,
     )
 
 
@@ -526,7 +562,10 @@ def compute_prediction_drift(
     if len(ref) < 10 or len(cur) < 10:
         logger.warning("Prediction drift: insufficient samples. Returning stable.")
         return PredictionDriftResult(
-            method="ks", statistic=0.0, pvalue=1.0, verdict="stable",
+            method="ks",
+            statistic=0.0,
+            pvalue=1.0,
+            verdict="stable",
             ref_mean=float(ref.mean()) if len(ref) > 0 else 0.0,
             current_mean=float(cur.mean()) if len(cur) > 0 else 0.0,
             ref_std=float(ref.std()) if len(ref) > 0 else 0.0,
@@ -618,14 +657,18 @@ def run_drift_detection(
     >>> if report.needs_retraining:
     ...     print("Retraining triggered:", report.retraining_features)
     """
-    cat_features = categorical_features or CATEGORICAL_FEATURES + HIGH_CARDINALITY_FEATURES
+    cat_features = (
+        categorical_features or CATEGORICAL_FEATURES + HIGH_CARDINALITY_FEATURES
+    )
     num_features = numeric_features or NUMERIC_FEATURES
 
     logger.info(
         "Starting drift detection. ref=%d rows, current=%d rows. "
         "Monitoring %d categorical + %d numeric features.",
-        len(reference_df), len(current_df),
-        len(cat_features), len(num_features),
+        len(reference_df),
+        len(current_df),
+        len(cat_features),
+        len(num_features),
     )
 
     report = DriftReport(
@@ -645,9 +688,7 @@ def run_drift_detection(
         psi_result = compute_psi_categorical(ref_series, cur_series)
         chi2_result = compute_chi2(ref_series, cur_series)
 
-        # Report the worse of the two verdicts
-        worse = psi_result if psi_result.statistic >= chi2_result.statistic else chi2_result
-        # But always use PSI as the primary metric (architecture requirement)
+        # Always use PSI as the primary metric (architecture requirement)
         report.feature_results.append(psi_result)
         if chi2_result.is_drifted and not psi_result.is_drifted:
             # Chi2 caught something PSI missed — add as a secondary result

@@ -18,14 +18,11 @@ import pytest
 from core.validation import (
     TARGET_COLUMN,
     LEAKAGE_COLUMNS,
-    INTAKE_FEATURES,
     ValidationError,
-    ValidationReport,
     compute_null_baseline,
     validate_against_baseline,
     validate_raw_data,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -159,9 +156,7 @@ class TestNullRates:
         df.loc[:100, "Product"] = None
         report = validate_raw_data(df, strict=False)
         # Check that the column report has a warning
-        product_report = next(
-            r for r in report.column_reports if r.column == "Product"
-        )
+        product_report = next(r for r in report.column_reports if r.column == "Product")
         assert len(product_report.warnings) > 0
 
     def test_zero_nulls_on_date_received_passes(self):

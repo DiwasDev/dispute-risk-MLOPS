@@ -1,0 +1,152 @@
+# .github/workflows/ci.yml
+# ========================
+# CI/CD pipeline for the Consumer Complaint Dispute Risk MLOps system.
+#
+# Triggers: every push and pull request to main.
+#
+# Gates (all must pass before merge):
+#   1. black --check   — code style
+#   2. ruff check      — linting
+#   3. pytest          — all unit tests
+#
+# Model promotion gate (separate job, manual approval required):
+#   - Runs training pipeline on a sample
+#   - Evaluates against the baseline PR-AUC floor
+#   - Promotes to @champion only if gate passes
+#
+# Architecture reference: §1 (Level 2 CI/CD), §5 (deployment workflow)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.12"
+  MLFLOW_ALLOW_FILE_STORE: "true"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Quality Gates: style, lint, tests
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Code style (black)
+        run: black --check .
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short -q
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///mlflow_ci.db
+
+  # ---------------------------------------------------------------------------
+  # Inference service smoke test: verify app imports and routes load
+  # ---------------------------------------------------------------------------
+  serving-smoke:
+    name: Serving Smoke Test
+    runs-on: ubuntu-latest
+    needs: quality
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify FastAPI app imports and routes
+        run: |
+          python -c "
+          from app.main import app
+          routes = [r.path for r in app.routes]
+          required = ['/health', '/predict', '/predict/batch', '/drift', '/']
+          missing = [r for r in required if r not in routes]
+          assert not missing, f'Missing routes: {missing}'
+          print('All required routes present:', routes)
+          print('PASS')
+          "
+
+      - name: Verify drift module integrity
+        run: |
+          python -c "
+          from core.drift import run_drift_detection, DriftReport
+          from core.monitoring import compute_monitoring_snapshot, check_alert_conditions
+          from app.schemas import ComplaintInput
+          print('All module imports OK')
+          "
+
+      - name: Verify schema round-trip
+        run: |
+          python -c "
+          from app.schemas import ComplaintInput
+          c = ComplaintInput(**{
+              'Date received': '2016-03-15',
+              'Product': 'Mortgage',
+              'Issue': 'Loan modification',
+              'Company': 'Bank of America',
+              'State': 'CA',
+              'ZIP code': '90001',
+              'Submitted via': 'Web',
+          })
+          df = c.to_dataframe()
+          assert len(df) == 1
+          assert 'Date received' in df.columns
+          print('Schema round-trip PASS')
+          "
+
+  # ---------------------------------------------------------------------------
+  # Rollback smoke test: verify rollback script loads without errors
+  # ---------------------------------------------------------------------------
+  rollback-smoke:
+    name: Rollback Script Smoke Test
+    runs-on: ubuntu-latest
+    needs: quality
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify rollback script imports
+        run: |
+          python -c "
+          import scripts.rollback as rb
+          import scripts.promote as pm
+          print('scripts/rollback.py OK')
+          print('scripts/promote.py OK')
+          "

@@ -261,9 +261,7 @@ def _check_target_values(df: pd.DataFrame) -> list[str]:
     return errors
 
 
-def _check_column_quality(
-    df: pd.DataFrame, column: str
-) -> ColumnQualityReport:
+def _check_column_quality(df: pd.DataFrame, column: str) -> ColumnQualityReport:
     """
     Run quality checks for a single column:
     - Null rate vs threshold

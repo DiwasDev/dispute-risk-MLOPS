@@ -63,11 +63,11 @@ logger = logging.getLogger(__name__)
 AlertSeverity = Literal["critical", "high", "medium", "low"]
 
 # Thresholds — aligned with architecture.md §6 and production-readiness.md
-LATENCY_P95_SLA_MS: float = 1000.0        # architecture.md: p95 < 1s
-NULL_RATE_SPIKE_THRESHOLD: float = 0.05   # absolute increase triggering alert
-PREDICTION_VOLUME_MIN: int = 1             # alert if zero predictions in window
+LATENCY_P95_SLA_MS: float = 1000.0  # architecture.md: p95 < 1s
+NULL_RATE_SPIKE_THRESHOLD: float = 0.05  # absolute increase triggering alert
+PREDICTION_VOLUME_MIN: int = 1  # alert if zero predictions in window
 PREDICTION_MEAN_DRIFT_THRESHOLD: float = 0.10  # abs mean shift triggering alert
-PREDICTION_STD_CHANGE_FACTOR: float = 2.0      # std ratio triggering alert
+PREDICTION_STD_CHANGE_FACTOR: float = 2.0  # std ratio triggering alert
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ class NullRateStats:
     feature: str
     current_null_rate: float
     baseline_null_rate: float
-    delta: float         # current - baseline (positive = more nulls than expected)
+    delta: float  # current - baseline (positive = more nulls than expected)
 
     @property
     def is_anomalous(self) -> bool:
@@ -106,7 +106,7 @@ class PredictionStats:
     p10: float
     p50: float
     p90: float
-    positive_rate: float    # fraction predicted as dispute (threshold-applied)
+    positive_rate: float  # fraction predicted as dispute (threshold-applied)
     baseline_mean: float | None = None
     baseline_std: float | None = None
 
@@ -219,12 +219,12 @@ class AlertItem:
     """
 
     severity: AlertSeverity
-    layer: int                   # 1=data/feature, 2=model, 3=product, 4=business
-    metric: str                  # e.g. "null_rate:Product", "latency_p95_ms"
+    layer: int  # 1=data/feature, 2=model, 3=product, 4=business
+    metric: str  # e.g. "null_rate:Product", "latency_p95_ms"
     current_value: float | str
     threshold: float | str
     message: str
-    owner: str = "ml-platform"   # Override per alert type with actual team name
+    owner: str = "ml-platform"  # Override per alert type with actual team name
     runbook: str = "See RUNBOOK.md"
 
     def __str__(self) -> str:
@@ -277,9 +277,9 @@ class AlertReport:
 
     def summary(self) -> str:
         status = (
-            "CRITICAL" if self.critical_alerts
-            else "HIGH" if self.high_alerts
-            else "HEALTHY"
+            "CRITICAL"
+            if self.critical_alerts
+            else "HIGH" if self.high_alerts else "HEALTHY"
         )
         return (
             f"[{status}] {len(self.alerts)} alerts "
@@ -341,7 +341,12 @@ def compute_monitoring_snapshot(
             model_version=model_version,
             request_count=0,
             prediction_stats=PredictionStats(
-                count=0, mean=0.0, std=0.0, p10=0.0, p50=0.0, p90=0.0,
+                count=0,
+                mean=0.0,
+                std=0.0,
+                p10=0.0,
+                p50=0.0,
+                p90=0.0,
                 positive_rate=0.0,
             ),
         )
@@ -390,15 +395,18 @@ def compute_monitoring_snapshot(
             if feature not in serving_log.columns:
                 continue
             current_rate = float(serving_log[feature].isna().mean())
-            null_stats.append(NullRateStats(
-                feature=feature,
-                current_null_rate=current_rate,
-                baseline_null_rate=baseline_rate,
-                delta=current_rate - baseline_rate,
-            ))
+            null_stats.append(
+                NullRateStats(
+                    feature=feature,
+                    current_null_rate=current_rate,
+                    baseline_null_rate=baseline_rate,
+                    delta=current_rate - baseline_rate,
+                )
+            )
 
     snapshot = MonitoringSnapshot(
-        window_start=window_start or str(serving_log.get("timestamp", pd.Series()).min()),
+        window_start=window_start
+        or str(serving_log.get("timestamp", pd.Series()).min()),
         window_end=window_end or str(serving_log.get("timestamp", pd.Series()).max()),
         model_version=model_version,
         request_count=len(serving_log),
@@ -442,19 +450,21 @@ def check_alert_conditions(snapshot: MonitoringSnapshot) -> AlertReport:
 
     # Zero request volume (data pipeline stopped)
     if snapshot.request_count == 0:
-        alerts.append(AlertItem(
-            severity="critical",
-            layer=1,
-            metric="request_volume",
-            current_value=0,
-            threshold=PREDICTION_VOLUME_MIN,
-            message=(
-                "Zero predictions in the monitoring window. "
-                "Data pipeline may have stopped. Check API logs and upstream data."
-            ),
-            owner="data-engineering",
-            runbook="RUNBOOK.md#zero-volume",
-        ))
+        alerts.append(
+            AlertItem(
+                severity="critical",
+                layer=1,
+                metric="request_volume",
+                current_value=0,
+                threshold=PREDICTION_VOLUME_MIN,
+                message=(
+                    "Zero predictions in the monitoring window. "
+                    "Data pipeline may have stopped. Check API logs and upstream data."
+                ),
+                owner="data-engineering",
+                runbook="RUNBOOK.md#zero-volume",
+            )
+        )
 
     # Null rate spikes (upstream pipeline failure)
     for null_stat in snapshot.null_rate_stats:
@@ -462,60 +472,66 @@ def check_alert_conditions(snapshot: MonitoringSnapshot) -> AlertReport:
             severity: AlertSeverity = (
                 "high" if abs(null_stat.delta) > 0.20 else "medium"
             )
-            alerts.append(AlertItem(
-                severity=severity,
-                layer=1,
-                metric=f"null_rate:{null_stat.feature}",
-                current_value=f"{null_stat.current_null_rate:.1%}",
-                threshold=f"baseline {null_stat.baseline_null_rate:.1%} ± {NULL_RATE_SPIKE_THRESHOLD:.0%}",
-                message=(
-                    f"'{null_stat.feature}' null rate spiked from "
-                    f"{null_stat.baseline_null_rate:.1%} (baseline) to "
-                    f"{null_stat.current_null_rate:.1%} (Δ{null_stat.delta:+.1%}). "
-                    "This usually signals an upstream pipeline break, not real drift."
-                ),
-                owner="data-engineering",
-                runbook="RUNBOOK.md#null-rate-spike",
-            ))
+            alerts.append(
+                AlertItem(
+                    severity=severity,
+                    layer=1,
+                    metric=f"null_rate:{null_stat.feature}",
+                    current_value=f"{null_stat.current_null_rate:.1%}",
+                    threshold=f"baseline {null_stat.baseline_null_rate:.1%} ± {NULL_RATE_SPIKE_THRESHOLD:.0%}",
+                    message=(
+                        f"'{null_stat.feature}' null rate spiked from "
+                        f"{null_stat.baseline_null_rate:.1%} (baseline) to "
+                        f"{null_stat.current_null_rate:.1%} (Δ{null_stat.delta:+.1%}). "
+                        "This usually signals an upstream pipeline break, not real drift."
+                    ),
+                    owner="data-engineering",
+                    runbook="RUNBOOK.md#null-rate-spike",
+                )
+            )
 
     # Prediction distribution collapse (model returning constant score)
     if snapshot.prediction_stats.is_collapsed and snapshot.request_count > 10:
-        alerts.append(AlertItem(
-            severity="critical",
-            layer=1,
-            metric="prediction_std",
-            current_value=f"{snapshot.prediction_stats.std:.4f}",
-            threshold="0.01",
-            message=(
-                f"Prediction score distribution has collapsed (std={snapshot.prediction_stats.std:.4f}). "
-                "Model is returning near-constant scores. Likely cause: "
-                "feature preprocessing failure, input pipeline bug, or wrong model loaded."
-            ),
-            owner="ml-platform",
-            runbook="RUNBOOK.md#prediction-collapse",
-        ))
+        alerts.append(
+            AlertItem(
+                severity="critical",
+                layer=1,
+                metric="prediction_std",
+                current_value=f"{snapshot.prediction_stats.std:.4f}",
+                threshold="0.01",
+                message=(
+                    f"Prediction score distribution has collapsed (std={snapshot.prediction_stats.std:.4f}). "
+                    "Model is returning near-constant scores. Likely cause: "
+                    "feature preprocessing failure, input pipeline bug, or wrong model loaded."
+                ),
+                owner="ml-platform",
+                runbook="RUNBOOK.md#prediction-collapse",
+            )
+        )
 
     # Prediction mean drift
     if snapshot.prediction_stats.mean_drifted:
         mean_shift = snapshot.prediction_stats.mean_shift or 0.0
-        alerts.append(AlertItem(
-            severity="high",
-            layer=1,
-            metric="prediction_mean",
-            current_value=f"{snapshot.prediction_stats.mean:.3f}",
-            threshold=(
-                f"baseline {snapshot.prediction_stats.baseline_mean:.3f} "
-                f"± {PREDICTION_MEAN_DRIFT_THRESHOLD}"
-            ),
-            message=(
-                f"Prediction mean shifted by {mean_shift:+.3f} from baseline "
-                f"{snapshot.prediction_stats.baseline_mean:.3f}. "
-                "This may indicate concept drift, a feature distribution shift, "
-                "or training-serving skew. Run drift detection on recent traffic."
-            ),
-            owner="ml-platform",
-            runbook="RUNBOOK.md#prediction-drift",
-        ))
+        alerts.append(
+            AlertItem(
+                severity="high",
+                layer=1,
+                metric="prediction_mean",
+                current_value=f"{snapshot.prediction_stats.mean:.3f}",
+                threshold=(
+                    f"baseline {snapshot.prediction_stats.baseline_mean:.3f} "
+                    f"± {PREDICTION_MEAN_DRIFT_THRESHOLD}"
+                ),
+                message=(
+                    f"Prediction mean shifted by {mean_shift:+.3f} from baseline "
+                    f"{snapshot.prediction_stats.baseline_mean:.3f}. "
+                    "This may indicate concept drift, a feature distribution shift, "
+                    "or training-serving skew. Run drift detection on recent traffic."
+                ),
+                owner="ml-platform",
+                runbook="RUNBOOK.md#prediction-drift",
+            )
+        )
 
     # -----------------------------------------------------------------------
     # Layer 2 — Model Metrics (requires labels, handled separately via eval pipeline)
@@ -530,41 +546,45 @@ def check_alert_conditions(snapshot: MonitoringSnapshot) -> AlertReport:
 
     # Senior queue saturation proxy: if positive rate > 60%, queue may be overwhelmed
     if snapshot.prediction_stats.positive_rate > 0.60 and snapshot.request_count > 50:
-        alerts.append(AlertItem(
-            severity="medium",
-            layer=3,
-            metric="positive_rate",
-            current_value=f"{snapshot.prediction_stats.positive_rate:.1%}",
-            threshold="60%",
-            message=(
-                f"Dispute routing rate is {snapshot.prediction_stats.positive_rate:.1%} "
-                "(expected ~21% from training). Senior review queue may be saturated. "
-                "Check if threshold needs adjustment or if the model is misbehaving."
-            ),
-            owner="product",
-            runbook="RUNBOOK.md#queue-saturation",
-        ))
+        alerts.append(
+            AlertItem(
+                severity="medium",
+                layer=3,
+                metric="positive_rate",
+                current_value=f"{snapshot.prediction_stats.positive_rate:.1%}",
+                threshold="60%",
+                message=(
+                    f"Dispute routing rate is {snapshot.prediction_stats.positive_rate:.1%} "
+                    "(expected ~21% from training). Senior review queue may be saturated. "
+                    "Check if threshold needs adjustment or if the model is misbehaving."
+                ),
+                owner="product",
+                runbook="RUNBOOK.md#queue-saturation",
+            )
+        )
 
     # -----------------------------------------------------------------------
     # Layer 3 — Serving Infrastructure (latency SLA)
     # -----------------------------------------------------------------------
 
     if snapshot.latency_stats and snapshot.latency_stats.sla_breached:
-        alerts.append(AlertItem(
-            severity="high",
-            layer=3,
-            metric="latency_p95_ms",
-            current_value=f"{snapshot.latency_stats.p95_ms:.0f}ms",
-            threshold=f"{LATENCY_P95_SLA_MS:.0f}ms",
-            message=(
-                f"p95 latency ({snapshot.latency_stats.p95_ms:.0f}ms) exceeds "
-                f"SLA of {LATENCY_P95_SLA_MS:.0f}ms. "
-                "Check for model complexity issues, infrastructure load, or feature "
-                "computation bottlenecks."
-            ),
-            owner="ml-platform",
-            runbook="RUNBOOK.md#latency-sla",
-        ))
+        alerts.append(
+            AlertItem(
+                severity="high",
+                layer=3,
+                metric="latency_p95_ms",
+                current_value=f"{snapshot.latency_stats.p95_ms:.0f}ms",
+                threshold=f"{LATENCY_P95_SLA_MS:.0f}ms",
+                message=(
+                    f"p95 latency ({snapshot.latency_stats.p95_ms:.0f}ms) exceeds "
+                    f"SLA of {LATENCY_P95_SLA_MS:.0f}ms. "
+                    "Check for model complexity issues, infrastructure load, or feature "
+                    "computation bottlenecks."
+                ),
+                owner="ml-platform",
+                runbook="RUNBOOK.md#latency-sla",
+            )
+        )
 
     report = AlertReport(
         snapshot_summary=snapshot.summary(),

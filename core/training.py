@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -102,7 +102,9 @@ class TrainingConfig:
 # ---------------------------------------------------------------------------
 
 
-def load_config(config_path: str | Path = "configs/training_config.yaml") -> TrainingConfig:
+def load_config(
+    config_path: str | Path = "configs/training_config.yaml",
+) -> TrainingConfig:
     """
     Load training_config.yaml into a typed TrainingConfig object.
 
@@ -320,20 +322,20 @@ def train_model(
 
     # Open or resume MLflow run
     run_context = (
-        mlflow.start_run(run_id=mlflow_run_id)
-        if mlflow_run_id
-        else mlflow.start_run()
+        mlflow.start_run(run_id=mlflow_run_id) if mlflow_run_id else mlflow.start_run()
     )
 
     with run_context as run:
         # Log tags (searchable metadata, not metrics)
-        mlflow.set_tags({
-            "snapshot_id": config.data.snapshot_id,
-            "git_commit": git_commit,
-            "model_type": active,
-            "train_rows": len(X_train),
-            "train_positive_rate": f"{y_train.mean():.4f}",
-        })
+        mlflow.set_tags(
+            {
+                "snapshot_id": config.data.snapshot_id,
+                "git_commit": git_commit,
+                "model_type": active,
+                "train_rows": len(X_train),
+                "train_positive_rate": f"{y_train.mean():.4f}",
+            }
+        )
 
         # Log all hyperparameters
         mlflow.log_params(flat_params)

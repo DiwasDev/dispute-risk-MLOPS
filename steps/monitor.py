@@ -92,7 +92,11 @@ def monitor_model(
             serving_log = pd.read_parquet(serving_log_path)
         else:
             serving_log = pd.read_csv(serving_log_path, low_memory=False)
-        logger.info("Serving log loaded: %d rows, %d columns.", len(serving_log), len(serving_log.columns))
+        logger.info(
+            "Serving log loaded: %d rows, %d columns.",
+            len(serving_log),
+            len(serving_log.columns),
+        )
     except Exception as exc:
         logger.error("Failed to load serving log from '%s': %s", serving_log_path, exc)
         raise
@@ -103,7 +107,9 @@ def monitor_model(
         reference_df = pd.read_csv(reference_data_path, low_memory=False, nrows=5000)
         logger.info("Reference data loaded: %d rows.", len(reference_df))
     except Exception as exc:
-        logger.warning("Failed to load reference data: %s. Drift detection skipped.", exc)
+        logger.warning(
+            "Failed to load reference data: %s. Drift detection skipped.", exc
+        )
         reference_df = pd.DataFrame()
 
     # --- Compute monitoring snapshot ---
@@ -119,8 +125,7 @@ def monitor_model(
     if not reference_df.empty:
         # Only pass features present in both DataFrames
         common_cols = [
-            col for col in reference_df.columns
-            if col in serving_log.columns
+            col for col in reference_df.columns if col in serving_log.columns
         ]
 
         # Separate scores if available
@@ -141,6 +146,7 @@ def monitor_model(
     else:
         # No reference data — create empty drift report
         from core.drift import DriftReport as _DR
+
         drift_report = _DR(reference_rows=0, current_rows=len(serving_log))
         logger.warning("Drift detection skipped: no reference data available.")
 
@@ -176,42 +182,57 @@ def _log_to_mlflow(
         ctx = mlflow.start_run(run_id=run_id) if run_id else mlflow.start_run()
         with ctx:
             # Layer 1: prediction health
-            mlflow.log_metrics({
-                "monitor.request_count": snapshot.request_count,
-                "monitor.prediction_mean": snapshot.prediction_stats.mean,
-                "monitor.prediction_std": snapshot.prediction_stats.std,
-                "monitor.prediction_p50": snapshot.prediction_stats.p50,
-                "monitor.prediction_p90": snapshot.prediction_stats.p90,
-                "monitor.positive_rate": snapshot.prediction_stats.positive_rate,
-            })
+            mlflow.log_metrics(
+                {
+                    "monitor.request_count": snapshot.request_count,
+                    "monitor.prediction_mean": snapshot.prediction_stats.mean,
+                    "monitor.prediction_std": snapshot.prediction_stats.std,
+                    "monitor.prediction_p50": snapshot.prediction_stats.p50,
+                    "monitor.prediction_p90": snapshot.prediction_stats.p90,
+                    "monitor.positive_rate": snapshot.prediction_stats.positive_rate,
+                }
+            )
 
             # Latency
             if snapshot.latency_stats:
-                mlflow.log_metrics({
-                    "monitor.latency_p50_ms": snapshot.latency_stats.p50_ms,
-                    "monitor.latency_p95_ms": snapshot.latency_stats.p95_ms,
-                    "monitor.latency_p99_ms": snapshot.latency_stats.p99_ms,
-                })
+                mlflow.log_metrics(
+                    {
+                        "monitor.latency_p50_ms": snapshot.latency_stats.p50_ms,
+                        "monitor.latency_p95_ms": snapshot.latency_stats.p95_ms,
+                        "monitor.latency_p99_ms": snapshot.latency_stats.p99_ms,
+                    }
+                )
 
             # Drift
-            mlflow.log_metrics({
-                "monitor.drift.has_drift": int(drift_report.has_drift),
-                "monitor.drift.needs_retraining": int(drift_report.needs_retraining),
-                "monitor.drift.drifted_feature_count": len(drift_report.drifted_features),
-            })
+            mlflow.log_metrics(
+                {
+                    "monitor.drift.has_drift": int(drift_report.has_drift),
+                    "monitor.drift.needs_retraining": int(
+                        drift_report.needs_retraining
+                    ),
+                    "monitor.drift.drifted_feature_count": len(
+                        drift_report.drifted_features
+                    ),
+                }
+            )
 
             # Alerts
-            mlflow.log_metrics({
-                "monitor.alerts.critical": len(alert_report.critical_alerts),
-                "monitor.alerts.high": len(alert_report.high_alerts),
-                "monitor.alerts.medium": len(alert_report.medium_alerts),
-                "monitor.alerts.total": len(alert_report.alerts),
-            })
+            mlflow.log_metrics(
+                {
+                    "monitor.alerts.critical": len(alert_report.critical_alerts),
+                    "monitor.alerts.high": len(alert_report.high_alerts),
+                    "monitor.alerts.medium": len(alert_report.medium_alerts),
+                    "monitor.alerts.total": len(alert_report.alerts),
+                }
+            )
 
             mlflow.log_param("monitor.model_version", snapshot.model_version)
             mlflow.log_param("monitor.window_start", snapshot.window_start)
             mlflow.log_param("monitor.window_end", snapshot.window_end)
-            mlflow.log_param("monitor.drifted_features", ",".join(drift_report.drifted_features) or "none")
+            mlflow.log_param(
+                "monitor.drifted_features",
+                ",".join(drift_report.drifted_features) or "none",
+            )
 
     except Exception as exc:
         # MLflow logging failures should not break the monitoring pipeline

@@ -21,8 +21,6 @@ Run with:
 
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -39,7 +37,6 @@ from core.training import (
     load_config,
     train_model,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -63,27 +60,39 @@ def _make_X_y(n: int = 120, seed: int = 42) -> tuple[pd.DataFrame, pd.Series]:
         return vals
 
     dates = pd.date_range("2014-01-01", "2016-06-01", periods=n)
-    X = pd.DataFrame({
-        "Date received": dates.strftime("%Y-%m-%d"),
-        "Product": choice(PRODUCTS, n),
-        "Sub-product": choice(["Conventional fixed mortgage", "Other"], n, null_rate=0.3),
-        "Issue": choice(ISSUES, n),
-        "Sub-issue": choice(["Info belongs to someone else", None], n, null_rate=0.6),
-        "Consumer complaint narrative": choice(["Long complaint.", None], n, null_rate=0.8),
-        "Company": choice(COMPANIES, n),
-        "State": choice(STATES, n, null_rate=0.01),
-        "ZIP code": choice(["30134", "90001"], n),
-        "Tags": choice(["Older American", "Servicemember", None], n, null_rate=0.85),
-        "Consumer consent provided?": choice(
-            ["Consent not provided", "Consent provided", None], n, null_rate=0.7
-        ),
-        "Submitted via": choice(["Web", "Referral", "Phone", "Postal mail"], n),
-    })
+    X = pd.DataFrame(
+        {
+            "Date received": dates.strftime("%Y-%m-%d"),
+            "Product": choice(PRODUCTS, n),
+            "Sub-product": choice(
+                ["Conventional fixed mortgage", "Other"], n, null_rate=0.3
+            ),
+            "Issue": choice(ISSUES, n),
+            "Sub-issue": choice(
+                ["Info belongs to someone else", None], n, null_rate=0.6
+            ),
+            "Consumer complaint narrative": choice(
+                ["Long complaint.", None], n, null_rate=0.8
+            ),
+            "Company": choice(COMPANIES, n),
+            "State": choice(STATES, n, null_rate=0.01),
+            "ZIP code": choice(["30134", "90001"], n),
+            "Tags": choice(
+                ["Older American", "Servicemember", None], n, null_rate=0.85
+            ),
+            "Consumer consent provided?": choice(
+                ["Consent not provided", "Consent provided", None], n, null_rate=0.7
+            ),
+            "Submitted via": choice(["Web", "Referral", "Phone", "Postal mail"], n),
+        }
+    )
     y = pd.Series(rng.integers(0, 2, size=n), name=TARGET_COLUMN)
     return X, y
 
 
-def _make_config_yaml(tmp_path: Path, model_active: str = "logistic_regression") -> Path:
+def _make_config_yaml(
+    tmp_path: Path, model_active: str = "logistic_regression"
+) -> Path:
     """Write a minimal valid training_config.yaml to a temp directory."""
     config = {
         "data": {
@@ -165,8 +174,12 @@ class TestLoadConfig:
     def test_missing_section_raises_key_error(self, tmp_path):
         # Write config with 'model' section removed
         partial_config = {
-            "data": {"snapshot_id": "x", "csv_path": "x", "split_date": "2016-01-01",
-                     "target_column": "Consumer disputed?"},
+            "data": {
+                "snapshot_id": "x",
+                "csv_path": "x",
+                "split_date": "2016-01-01",
+                "target_column": "Consumer disputed?",
+            },
             "experiment": {"name": "x", "random_seed": 42, "cv_folds": 3},
             # 'model' and 'evaluation' missing
         }
@@ -211,6 +224,7 @@ class TestBuildModel:
         pytest.importorskip("xgboost")
         cfg = load_config(_make_config_yaml(tmp_path, "xgboost"))
         from xgboost import XGBClassifier
+
         model = build_model(cfg)
         assert isinstance(model, XGBClassifier)
 
@@ -218,6 +232,7 @@ class TestBuildModel:
         pytest.importorskip("lightgbm")
         cfg = load_config(_make_config_yaml(tmp_path, "lightgbm"))
         from lightgbm import LGBMClassifier
+
         model = build_model(cfg)
         assert isinstance(model, LGBMClassifier)
 
@@ -245,12 +260,13 @@ class TestTrainModel:
     @staticmethod
     def _setup_mlflow(tmp_path, monkeypatch):
         import mlflow
+
         db = tmp_path / "mlflow.db"
         monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
         mlflow.set_tracking_uri(f"sqlite:///{db}")
 
     def test_returns_fitted_pipeline_and_run_id(self, tmp_path, monkeypatch):
-        import mlflow
+
         self._setup_mlflow(tmp_path, monkeypatch)
 
         cfg = load_config(_make_config_yaml(tmp_path))
@@ -263,7 +279,7 @@ class TestTrainModel:
         assert len(run_id) > 0
 
     def test_fitted_pipeline_predicts_proba(self, tmp_path, monkeypatch):
-        import mlflow
+
         self._setup_mlflow(tmp_path, monkeypatch)
 
         cfg = load_config(_make_config_yaml(tmp_path))
@@ -277,7 +293,7 @@ class TestTrainModel:
         assert (proba >= 0).all() and (proba <= 1).all()
 
     def test_pipeline_has_expected_steps(self, tmp_path, monkeypatch):
-        import mlflow
+
         self._setup_mlflow(tmp_path, monkeypatch)
 
         cfg = load_config(_make_config_yaml(tmp_path))
@@ -290,7 +306,7 @@ class TestTrainModel:
         assert "model" in step_names
 
     def test_pipeline_no_nan_in_predictions(self, tmp_path, monkeypatch):
-        import mlflow
+
         self._setup_mlflow(tmp_path, monkeypatch)
 
         cfg = load_config(_make_config_yaml(tmp_path))
@@ -302,7 +318,7 @@ class TestTrainModel:
         assert not np.isnan(proba).any(), "Predictions contain NaN values"
 
     def test_xgboost_trains_successfully(self, tmp_path, monkeypatch):
-        import mlflow
+
         pytest.importorskip("xgboost")
         self._setup_mlflow(tmp_path, monkeypatch)
 
@@ -316,7 +332,7 @@ class TestTrainModel:
         assert run_id is not None
 
     def test_lightgbm_trains_successfully(self, tmp_path, monkeypatch):
-        import mlflow
+
         pytest.importorskip("lightgbm")
         self._setup_mlflow(tmp_path, monkeypatch)
 

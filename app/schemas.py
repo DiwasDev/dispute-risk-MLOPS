@@ -113,20 +113,24 @@ class ComplaintInput(BaseModel):
         """
         import pandas as pd
 
-        return pd.DataFrame([{
-            "Date received": self.Date_received,
-            "Product": self.Product,
-            "Sub-product": self.Sub_product,
-            "Issue": self.Issue,
-            "Sub-issue": self.Sub_issue,
-            "Consumer complaint narrative": self.Consumer_complaint_narrative,
-            "Company": self.Company,
-            "State": self.State,
-            "ZIP code": self.ZIP_code,
-            "Tags": self.Tags,
-            "Consumer consent provided?": self.Consumer_consent_provided,
-            "Submitted via": self.Submitted_via,
-        }])
+        return pd.DataFrame(
+            [
+                {
+                    "Date received": self.Date_received,
+                    "Product": self.Product,
+                    "Sub-product": self.Sub_product,
+                    "Issue": self.Issue,
+                    "Sub-issue": self.Sub_issue,
+                    "Consumer complaint narrative": self.Consumer_complaint_narrative,
+                    "Company": self.Company,
+                    "State": self.State,
+                    "ZIP code": self.ZIP_code,
+                    "Tags": self.Tags,
+                    "Consumer consent provided?": self.Consumer_consent_provided,
+                    "Submitted via": self.Submitted_via,
+                }
+            ]
+        )
 
 
 class PredictionResponse(BaseModel):
@@ -181,11 +185,10 @@ class BatchPredictionResponse(BaseModel):
     predictions: list[PredictionResponse]
     count: int
 
-
     class HealthResponse(BaseModel):
         """Health check response including golden input parity status."""
 
-        status: str                    # "healthy" | "degraded" | "unhealthy"
+        status: str  # "healthy" | "degraded" | "unhealthy"
         model_version: str
         model_alias: str
         golden_input_passed: bool

@@ -19,13 +19,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 from sklearn.linear_model import LogisticRegression
 
 from core.preprocessing import (
     DATE_COLUMN,
-    HIGH_CARD_CATS,
-    LOW_CARD_CATS,
     NARRATIVE_COLUMN,
     TARGET_COLUMN,
     DateFeatureExtractor,
@@ -36,14 +33,23 @@ from core.preprocessing import (
     time_based_split,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
-PRODUCTS = ["Mortgage", "Credit reporting", "Debt collection", "Credit card", "Bank account or service"]
+PRODUCTS = [
+    "Mortgage",
+    "Credit reporting",
+    "Debt collection",
+    "Credit card",
+    "Bank account or service",
+]
 COMPANIES = ["Equifax", "Bank of America", "Wells Fargo", "Citibank", "JPMorgan Chase"]
-ISSUES = ["Incorrect information on credit report", "Loan modification", "Billing disputes"]
+ISSUES = [
+    "Incorrect information on credit report",
+    "Loan modification",
+    "Billing disputes",
+]
 STATES = ["GA", "CA", "TX", "NY", "FL"]
 
 
@@ -64,23 +70,33 @@ def _make_raw_df(n: int = 200, seed: int = 42) -> pd.DataFrame:
 
     dates = pd.date_range("2014-01-01", "2016-06-01", periods=n)
 
-    df = pd.DataFrame({
-        "Date received": dates.strftime("%Y-%m-%d"),
-        "Product": choice(PRODUCTS, n),
-        "Sub-product": choice(["Conventional fixed mortgage", "Other"], n, null_rate=0.29),
-        "Issue": choice(ISSUES, n),
-        "Sub-issue": choice(["Information belongs to someone else", None], n, null_rate=0.61),
-        "Consumer complaint narrative": choice(["Long complaint text here.", None], n, null_rate=0.84),
-        "Company": choice(COMPANIES, n),
-        "State": choice(STATES, n, null_rate=0.01),
-        "ZIP code": choice(["30134", "90001", "77001"], n, null_rate=0.01),
-        "Tags": choice(["Older American", "Servicemember", None], n, null_rate=0.86),
-        "Consumer consent provided?": choice(
-            ["Consent not provided", "Consent provided", None], n, null_rate=0.72
-        ),
-        "Submitted via": choice(["Web", "Referral", "Phone", "Postal mail"], n),
-        TARGET_COLUMN: choice(["Yes", "No"], n),
-    })
+    df = pd.DataFrame(
+        {
+            "Date received": dates.strftime("%Y-%m-%d"),
+            "Product": choice(PRODUCTS, n),
+            "Sub-product": choice(
+                ["Conventional fixed mortgage", "Other"], n, null_rate=0.29
+            ),
+            "Issue": choice(ISSUES, n),
+            "Sub-issue": choice(
+                ["Information belongs to someone else", None], n, null_rate=0.61
+            ),
+            "Consumer complaint narrative": choice(
+                ["Long complaint text here.", None], n, null_rate=0.84
+            ),
+            "Company": choice(COMPANIES, n),
+            "State": choice(STATES, n, null_rate=0.01),
+            "ZIP code": choice(["30134", "90001", "77001"], n, null_rate=0.01),
+            "Tags": choice(
+                ["Older American", "Servicemember", None], n, null_rate=0.86
+            ),
+            "Consumer consent provided?": choice(
+                ["Consent not provided", "Consent provided", None], n, null_rate=0.72
+            ),
+            "Submitted via": choice(["Web", "Referral", "Phone", "Postal mail"], n),
+            TARGET_COLUMN: choice(["Yes", "No"], n),
+        }
+    )
     return df
 
 
@@ -107,8 +123,8 @@ class TestDateFeatureExtractor:
         X = pd.DataFrame({"Date received": ["2015-03-17"]})
         out = DateFeatureExtractor().fit_transform(X)
         assert out[0, 0] == 2015  # year
-        assert out[0, 1] == 3     # month
-        assert out[0, 2] == 1     # Tuesday
+        assert out[0, 1] == 3  # month
+        assert out[0, 2] == 1  # Tuesday
 
     def test_null_date_uses_fallback(self):
         X = pd.DataFrame({"Date received": [None]})
@@ -194,7 +210,9 @@ class TestBuildFeaturePipeline:
         X, y = _make_X_y(n=50)
         pipeline = build_feature_pipeline()
         out = pipeline.fit_transform(X, y)
-        assert np.issubdtype(out.dtype, np.floating) or np.issubdtype(out.dtype, np.integer)
+        assert np.issubdtype(out.dtype, np.floating) or np.issubdtype(
+            out.dtype, np.integer
+        )
 
     def test_no_nan_in_output(self):
         X, y = _make_X_y(n=100)

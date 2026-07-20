@@ -87,7 +87,7 @@ from sklearn.metrics import (
 )
 from sklearn.pipeline import Pipeline
 
-from core.training import EvaluationConfig, TrainingConfig, load_config
+from core.training import TrainingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -501,7 +501,10 @@ def evaluate_slices(
             if n < min_slice_size:
                 logger.debug(
                     "Slice %s=%s has only %d samples (< %d). Skipping.",
-                    col, val, n, min_slice_size,
+                    col,
+                    val,
+                    n,
+                    min_slice_size,
                 )
                 continue
 
@@ -512,33 +515,40 @@ def evaluate_slices(
             if n_pos == 0:
                 logger.warning(
                     "Slice %s=%s has no positive examples. PR-AUC undefined.",
-                    col, val,
+                    col,
+                    val,
                 )
-                results.append(SliceResult(
-                    slice_column=col,
-                    slice_value=val,
-                    n_samples=n,
-                    n_positive=0,
-                    pr_auc=None,
-                    f2_at_threshold=None,
-                    recall_at_threshold=None,
-                    precision_at_threshold=None,
-                ))
+                results.append(
+                    SliceResult(
+                        slice_column=col,
+                        slice_value=val,
+                        n_samples=n,
+                        n_positive=0,
+                        pr_auc=None,
+                        f2_at_threshold=None,
+                        recall_at_threshold=None,
+                        precision_at_threshold=None,
+                    )
+                )
                 continue
 
             slice_pr_auc = float(average_precision_score(y_t, y_p))
-            slice_threshold_metrics = compute_threshold_metrics(y_t, y_p, threshold, beta=beta)
+            slice_threshold_metrics = compute_threshold_metrics(
+                y_t, y_p, threshold, beta=beta
+            )
 
-            results.append(SliceResult(
-                slice_column=col,
-                slice_value=val,
-                n_samples=int(n),
-                n_positive=n_pos,
-                pr_auc=slice_pr_auc,
-                f2_at_threshold=slice_threshold_metrics.f2,
-                recall_at_threshold=slice_threshold_metrics.recall,
-                precision_at_threshold=slice_threshold_metrics.precision,
-            ))
+            results.append(
+                SliceResult(
+                    slice_column=col,
+                    slice_value=val,
+                    n_samples=int(n),
+                    n_positive=n_pos,
+                    pr_auc=slice_pr_auc,
+                    f2_at_threshold=slice_threshold_metrics.f2,
+                    recall_at_threshold=slice_threshold_metrics.recall,
+                    precision_at_threshold=slice_threshold_metrics.precision,
+                )
+            )
 
     return results
 
@@ -695,34 +705,36 @@ def _log_to_mlflow(
     mlflow.set_experiment(config.experiment.name)
 
     run_ctx = (
-        mlflow.start_run(run_id=mlflow_run_id)
-        if mlflow_run_id
-        else mlflow.start_run()
+        mlflow.start_run(run_id=mlflow_run_id) if mlflow_run_id else mlflow.start_run()
     )
 
     with run_ctx:
         # Core metrics
-        mlflow.log_metrics({
-            "pr_auc": result.pr_auc,
-            "pr_auc_ci_lower": result.pr_auc_ci.lower,
-            "pr_auc_ci_upper": result.pr_auc_ci.upper,
-            "roc_auc": result.roc_auc,
-            "optimal_threshold": result.optimal_threshold,
-            "precision_at_threshold": result.threshold_metrics.precision,
-            "recall_at_threshold": result.threshold_metrics.recall,
-            "f2_at_threshold": result.threshold_metrics.f2,
-            "f1_at_threshold": result.threshold_metrics.f1,
-            "recall_at_p40": result.recall_at_target_precision,
-            "flagged_rate": result.threshold_metrics.flagged_rate,
-        })
+        mlflow.log_metrics(
+            {
+                "pr_auc": result.pr_auc,
+                "pr_auc_ci_lower": result.pr_auc_ci.lower,
+                "pr_auc_ci_upper": result.pr_auc_ci.upper,
+                "roc_auc": result.roc_auc,
+                "optimal_threshold": result.optimal_threshold,
+                "precision_at_threshold": result.threshold_metrics.precision,
+                "recall_at_threshold": result.threshold_metrics.recall,
+                "f2_at_threshold": result.threshold_metrics.f2,
+                "f1_at_threshold": result.threshold_metrics.f1,
+                "recall_at_p40": result.recall_at_target_precision,
+                "flagged_rate": result.threshold_metrics.flagged_rate,
+            }
+        )
 
         # Confusion matrix components
-        mlflow.log_metrics({
-            "tp": result.threshold_metrics.tp,
-            "fp": result.threshold_metrics.fp,
-            "fn": result.threshold_metrics.fn,
-            "tn": result.threshold_metrics.tn,
-        })
+        mlflow.log_metrics(
+            {
+                "tp": result.threshold_metrics.tp,
+                "fp": result.threshold_metrics.fp,
+                "fn": result.threshold_metrics.fn,
+                "tn": result.threshold_metrics.tn,
+            }
+        )
 
         # Slice metrics — logged with prefix for easy filtering in MLflow UI
         for sr in result.slice_results:
@@ -730,18 +742,26 @@ def _log_to_mlflow(
                 safe_col = sr.slice_column.replace(" ", "_").replace("?", "")
                 safe_val = str(sr.slice_value).replace(" ", "_")[:20]
                 prefix = f"slice_{safe_col}_{safe_val}"
-                mlflow.log_metrics({
-                    f"{prefix}_pr_auc": sr.pr_auc,
-                    f"{prefix}_f2": sr.f2_at_threshold or 0.0,
-                    f"{prefix}_recall": sr.recall_at_threshold or 0.0,
-                    f"{prefix}_precision": sr.precision_at_threshold or 0.0,
-                    f"{prefix}_n": sr.n_samples,
-                })
+                mlflow.log_metrics(
+                    {
+                        f"{prefix}_pr_auc": sr.pr_auc,
+                        f"{prefix}_f2": sr.f2_at_threshold or 0.0,
+                        f"{prefix}_recall": sr.recall_at_threshold or 0.0,
+                        f"{prefix}_precision": sr.precision_at_threshold or 0.0,
+                        f"{prefix}_n": sr.n_samples,
+                    }
+                )
 
         # Tags
-        mlflow.set_tags({
-            "imbalance_decision": result.imbalance_decision[:250],  # MLflow tag limit
-            "eval_bootstrap_iters": config.evaluation.bootstrap_iterations,
-        })  
+        mlflow.set_tags(
+            {
+                "imbalance_decision": result.imbalance_decision[
+                    :250
+                ],  # MLflow tag limit
+                "eval_bootstrap_iters": config.evaluation.bootstrap_iterations,
+            }
+        )
 
-    logger.info("Evaluation metrics logged to MLflow run: %s", mlflow_run_id or "new run")
+    logger.info(
+        "Evaluation metrics logged to MLflow run: %s", mlflow_run_id or "new run"
+    )

@@ -47,13 +47,11 @@ and keeps the pipeline model-agnostic.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, TargetEncoder
 
@@ -70,9 +68,9 @@ TARGET_COLUMN = "Consumer disputed?"
 # handle_unknown='ignore' → unseen categories at serving get all-zero row
 # (no crash, no information leakage from future categories).
 LOW_CARD_CATS: list[str] = [
-    "Product",          # 12 unique
-    "Submitted via",    # 6 unique
-    "Tags",             # 3 unique + MISSING sentinel
+    "Product",  # 12 unique
+    "Submitted via",  # 6 unique
+    "Tags",  # 3 unique + MISSING sentinel
     "Consumer consent provided?",  # 4 unique + MISSING sentinel
 ]
 
@@ -80,10 +78,10 @@ LOW_CARD_CATS: list[str] = [
 # smooth='auto' selects the smoothing factor via cross-validation inside fit().
 # Unknown categories at serving → global mean (safe fallback).
 HIGH_CARD_CATS: list[str] = [
-    "Company",      # 3,064 unique — target encoding prevents 3K OHE columns
-    "Issue",        # 95 unique
-    "Sub-issue",    # 67 unique + MISSING sentinel
-    "State",        # 62 unique
+    "Company",  # 3,064 unique — target encoding prevents 3K OHE columns
+    "Issue",  # 95 unique
+    "Sub-issue",  # 67 unique + MISSING sentinel
+    "State",  # 62 unique
     "Sub-product",  # 47 unique + MISSING sentinel
 ]
 
@@ -99,8 +97,8 @@ SENTINEL_FILL_COLS: list[str] = [
 # Columns that get mode fill for nulls (rare nulls, not informative).
 MODE_FILL_COLS: list[str] = [
     "State",
-    "Company",   # <0.01% null — safe to mode fill
-    "Issue",     # 0% null in practice
+    "Company",  # <0.01% null — safe to mode fill
+    "Issue",  # 0% null in practice
 ]
 
 # Date column: decomposed into numeric features.
@@ -114,9 +112,7 @@ DROP_COLS: list[str] = ["ZIP code"]
 
 # All feature columns (after leakage/ID drop by validation step).
 ALL_FEATURE_COLS: list[str] = (
-    LOW_CARD_CATS
-    + HIGH_CARD_CATS
-    + [DATE_COLUMN, NARRATIVE_COLUMN]
+    LOW_CARD_CATS + HIGH_CARD_CATS + [DATE_COLUMN, NARRATIVE_COLUMN]
 )
 
 
@@ -147,9 +143,7 @@ class DateFeatureExtractor(BaseEstimator, TransformerMixin):
         # Stateless — nothing to learn from training data.
         return self
 
-    def transform(
-        self, X: pd.DataFrame | np.ndarray
-    ) -> np.ndarray:
+    def transform(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
         """Return (n, 3) array: [year, month, day_of_week]."""
         # ColumnTransformer passes a 2D array; we want the first column.
         if isinstance(X, np.ndarray):
@@ -158,11 +152,13 @@ class DateFeatureExtractor(BaseEstimator, TransformerMixin):
             col = X.iloc[:, 0]
 
         dates = pd.to_datetime(col, errors="coerce")
-        result = np.column_stack([
-            dates.dt.year.fillna(2013).astype(int),   # fallback: dataset midpoint
-            dates.dt.month.fillna(6).astype(int),
-            dates.dt.dayofweek.fillna(2).astype(int),
-        ])
+        result = np.column_stack(
+            [
+                dates.dt.year.fillna(2013).astype(int),  # fallback: dataset midpoint
+                dates.dt.month.fillna(6).astype(int),
+                dates.dt.dayofweek.fillna(2).astype(int),
+            ]
+        )
         return result
 
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
@@ -255,14 +251,19 @@ def _build_low_card_pipeline() -> Pipeline:
     sparse_output=False: return dense array. With only ~20 OHE columns total
     from this group, dense is fine and simpler to debug.
     """
-    return Pipeline([
-        ("imputer", SentinelImputer(sentinel="MISSING")),
-        ("encoder", OneHotEncoder(
-            handle_unknown="ignore",
-            sparse_output=False,
-            dtype=np.float32,
-        )),
-    ])
+    return Pipeline(
+        [
+            ("imputer", SentinelImputer(sentinel="MISSING")),
+            (
+                "encoder",
+                OneHotEncoder(
+                    handle_unknown="ignore",
+                    sparse_output=False,
+                    dtype=np.float32,
+                ),
+            ),
+        ]
+    )
 
 
 def _build_high_card_pipeline() -> Pipeline:
@@ -289,14 +290,19 @@ def _build_high_card_pipeline() -> Pipeline:
     cross-fitting, the target encoder would see the target for each row when
     computing that row's encoding — data leakage within training.
     """
-    return Pipeline([
-        ("imputer", SentinelImputer(sentinel="MISSING")),
-        ("encoder", TargetEncoder(
-            smooth="auto",
-            cv=5,
-            target_type="binary",
-        )),
-    ])
+    return Pipeline(
+        [
+            ("imputer", SentinelImputer(sentinel="MISSING")),
+            (
+                "encoder",
+                TargetEncoder(
+                    smooth="auto",
+                    cv=5,
+                    target_type="binary",
+                ),
+            ),
+        ]
+    )
 
 
 def build_feature_pipeline(*, include_scaler: bool = True) -> ColumnTransformer:
@@ -344,7 +350,7 @@ def build_feature_pipeline(*, include_scaler: bool = True) -> ColumnTransformer:
 
     ct = ColumnTransformer(
         transformers=transformers,
-        remainder="drop",       # Drop ZIP code and any other unspecified columns
+        remainder="drop",  # Drop ZIP code and any other unspecified columns
         verbose_feature_names_out=False,
     )
 

@@ -23,7 +23,6 @@ import pandas as pd
 from zenml import step
 
 from core.validation import (
-    ValidationReport,
     load_and_validate,
 )
 

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 
 import mlflow
@@ -55,8 +56,6 @@ logging.basicConfig(
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-
-import os
 
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
 MODEL_NAME = os.getenv("MODEL_NAME", "dispute-risk-model")
@@ -101,7 +100,9 @@ def _golden_input_gate(pipeline) -> bool:
         return False
 
 
-def _metric_gate(client: mlflow.tracking.MlflowClient, version: str, min_pr_auc: float) -> bool:
+def _metric_gate(
+    client: mlflow.tracking.MlflowClient, version: str, min_pr_auc: float
+) -> bool:
     """Return True if the candidate version's PR-AUC meets the minimum threshold."""
     if min_pr_auc <= 0.0:
         logger.info("Metric gate skipped (PR_AUC_GATE=0.0).")
@@ -111,23 +112,32 @@ def _metric_gate(client: mlflow.tracking.MlflowClient, version: str, min_pr_auc:
         model_version = client.get_model_version(MODEL_NAME, version)
         run_id = model_version.run_id
         if not run_id:
-            logger.warning("No run_id for version %s — cannot check metrics. Skipping gate.", version)
+            logger.warning(
+                "No run_id for version %s — cannot check metrics. Skipping gate.",
+                version,
+            )
             return True
 
         run = client.get_run(run_id)
         pr_auc = run.data.metrics.get("val_pr_auc") or run.data.metrics.get("pr_auc")
         if pr_auc is None:
-            logger.warning("PR-AUC metric not found for version %s. Skipping gate.", version)
+            logger.warning(
+                "PR-AUC metric not found for version %s. Skipping gate.", version
+            )
             return True
 
         if pr_auc < min_pr_auc:
             logger.error(
                 "Metric gate FAILED: PR-AUC=%.4f < required %.4f for version %s.",
-                pr_auc, min_pr_auc, version,
+                pr_auc,
+                min_pr_auc,
+                version,
             )
             return False
 
-        logger.info("Metric gate PASSED: PR-AUC=%.4f >= required %.4f.", pr_auc, min_pr_auc)
+        logger.info(
+            "Metric gate PASSED: PR-AUC=%.4f >= required %.4f.", pr_auc, min_pr_auc
+        )
         return True
 
     except Exception as exc:
@@ -170,7 +180,10 @@ def promote(
 
     logger.info(
         "Promotion request: model='%s' version=%s | dry_run=%s | skip_metric_gate=%s",
-        MODEL_NAME, version, dry_run, skip_metric_gate,
+        MODEL_NAME,
+        version,
+        dry_run,
+        skip_metric_gate,
     )
 
     # --- Step 1: Verify candidate version exists ---
@@ -199,7 +212,9 @@ def promote(
         return False
 
     if not _golden_input_gate(pipeline):
-        logger.error("Promotion BLOCKED: golden input gate failed for version %s.", version)
+        logger.error(
+            "Promotion BLOCKED: golden input gate failed for version %s.", version
+        )
         return False
 
     # --- Step 4: Metric gate ---
@@ -212,7 +227,8 @@ def promote(
         logger.info(
             "[DRY RUN] Would promote version=%s to @champion. "
             "Would tag version=%s as previous_champion.",
-            version, current_champion_version,
+            version,
+            current_champion_version,
         )
         return True
 
@@ -221,14 +237,17 @@ def promote(
         client.set_registered_model_tag(
             MODEL_NAME, PREVIOUS_CHAMPION_TAG, current_champion_version
         )
-        logger.info("Tagged version=%s as %s.", current_champion_version, PREVIOUS_CHAMPION_TAG)
+        logger.info(
+            "Tagged version=%s as %s.", current_champion_version, PREVIOUS_CHAMPION_TAG
+        )
 
     # Assign the @champion alias
     client.set_registered_model_alias(MODEL_NAME, CHAMPION_ALIAS, version)
     logger.info(
         "SUCCESS: version=%s is now @champion for model '%s'. "
         "Restart the API service to load the new model (or wait for /health ping).",
-        version, MODEL_NAME,
+        version,
+        MODEL_NAME,
     )
     return True
 
@@ -242,17 +261,22 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Promote a model version to @champion in the MLflow registry."
     )
-    parser.add_argument("--version", required=True, help="Model version number to promote.")
     parser.add_argument(
-        "--skip-metric-gate", action="store_true",
+        "--version", required=True, help="Model version number to promote."
+    )
+    parser.add_argument(
+        "--skip-metric-gate",
+        action="store_true",
         help="Skip PR-AUC comparison gate (use for emergency hotfixes).",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Run all checks but don't modify the registry.",
     )
     parser.add_argument(
-        "--min-pr-auc", type=float,
+        "--min-pr-auc",
+        type=float,
         default=float(os.getenv("PR_AUC_GATE", "0.0")),
         help="Minimum PR-AUC for the metric gate. Default: PR_AUC_GATE env var or 0.0.",
     )
