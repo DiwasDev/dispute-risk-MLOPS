@@ -23,10 +23,14 @@ pandas = "*"
 passlib = "*"
 sqlmodel = "*"
 
-[tool.poetry.group.dev.dependencies]
-black = "^23.0.0"
-ruff = "^0.1.0"
-pytest = "*"
+
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "pytest"
+]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
