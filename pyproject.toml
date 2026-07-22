@@ -3,6 +3,12 @@ name = "customer-mlops"
 version = "1.0.0"
 description = "MLOps pipeline for Consumer Complaint Dispute Prediction"
 authors = ["Your Name"]
+packages = [
+    { include = "steps" },
+    { include = "pipelines" },
+    { include = "app" },
+    { include = "core" }
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
