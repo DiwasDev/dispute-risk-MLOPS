@@ -51,7 +51,7 @@ from steps.evaluate import evaluate
 logger = logging.getLogger(__name__)
 
 
-@pipeline(name="complaint-dispute-training")
+@pipeline(name="complaint-dispute-training", enable_cache=False)
 def training_pipeline(
     csv_path: str = "data/complaints.csv",
     config_path: str = "configs/training_config.yaml",
@@ -80,7 +80,9 @@ def training_pipeline(
     # Step 3: Train
     # Returns fitted pipeline AND the MLflow run_id so the evaluate step
     # logs its metrics to the same run as the model artifact.
-    pipeline_artifact, mlflow_run_id = train(
+    pipeline_artifact, mlflow_run_id = train.with_options(
+        experiment_tracker="mlflow_tracker"
+    )(
         X_train=X_train,
         y_train=y_train,
         config_path=config_path,
@@ -89,7 +91,7 @@ def training_pipeline(
     # Step 4: Evaluate
     # Logs PR-AUC, F2, Recall@Precision, bootstrapped CIs, and slice metrics
     # to the MLflow run opened in the train step.
-    evaluate(
+    evaluate.with_options(experiment_tracker="mlflow_tracker")(
         pipeline=pipeline_artifact,
         X_val=X_val,
         y_val=y_val,

@@ -264,6 +264,7 @@ class TestTrainModel:
         db = tmp_path / "mlflow.db"
         monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
         mlflow.set_tracking_uri(f"sqlite:///{db}")
+        mlflow.set_experiment("test-experiment")
 
     def test_returns_fitted_pipeline_and_run_id(self, tmp_path, monkeypatch):
 
@@ -272,7 +273,10 @@ class TestTrainModel:
         cfg = load_config(_make_config_yaml(tmp_path))
         X, y = _make_X_y()
 
-        pipeline, run_id = train_model(X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            pipeline, run_id = train_model(X, y, cfg)
 
         assert isinstance(pipeline, Pipeline)
         assert isinstance(run_id, str)
@@ -285,7 +289,10 @@ class TestTrainModel:
         cfg = load_config(_make_config_yaml(tmp_path))
         X, y = _make_X_y()
 
-        pipeline, _ = train_model(X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            pipeline, _ = train_model(X, y, cfg)
         proba = pipeline.predict_proba(X)
 
         assert proba.shape == (len(X), 2)
@@ -299,7 +306,10 @@ class TestTrainModel:
         cfg = load_config(_make_config_yaml(tmp_path))
         X, y = _make_X_y()
 
-        pipeline, _ = train_model(X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            pipeline, _ = train_model(X, y, cfg)
         step_names = [name for name, _ in pipeline.steps]
 
         assert "preprocessor" in step_names
@@ -312,7 +322,10 @@ class TestTrainModel:
         cfg = load_config(_make_config_yaml(tmp_path))
         X, y = _make_X_y()
 
-        pipeline, _ = train_model(X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            pipeline, _ = train_model(X, y, cfg)
         proba = pipeline.predict_proba(X)
 
         assert not np.isnan(proba).any(), "Predictions contain NaN values"
@@ -325,7 +338,10 @@ class TestTrainModel:
         cfg = load_config(_make_config_yaml(tmp_path, "xgboost"))
         X, y = _make_X_y()
 
-        pipeline, run_id = train_model(X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            pipeline, run_id = train_model(X, y, cfg)
         proba = pipeline.predict_proba(X)
 
         assert proba.shape[0] == len(X)
@@ -339,7 +355,10 @@ class TestTrainModel:
         cfg = load_config(_make_config_yaml(tmp_path, "lightgbm"))
         X, y = _make_X_y()
 
-        pipeline, run_id = train_model(X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            pipeline, run_id = train_model(X, y, cfg)
         proba = pipeline.predict_proba(X)
 
         assert proba.shape[0] == len(X)

@@ -11,23 +11,39 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.12"
+# Core orchestration + experiment tracking
 zenml = "0.96.1"
 mlflow = "3.14.0"
+# zenml[local] dependencies (required for `zenml up` / `zenml login --local`)
+# zenml 0.96.1 requires sqlmodel==0.0.38 exactly for its local store
+sqlmodel = "0.0.38"
+sqlalchemy-utils = ">=0.37.0"
+bcrypt = "4.0.1"
+passlib = "~1.7.4"
+alembic = ">=1.8.1,<=1.15.2"
+pymysql = ">=1.1.1,<1.2.0"
+jsonschema = ">=4.0.0"
+# Data + monitoring
 evidently = "0.7.21"
+# ML
 scikit-learn = "1.9.0"
-xgboost = "<3.3.0"
+xgboost = ">=3.0.0,<3.3.0"
 lightgbm = "4.6.0"
 numpy = "*"
 pandas = "*"
-passlib = "*"
-sqlmodel = "*"
+
 
 [tool.poetry.group.dev.dependencies]
 black = ">=23.0.0"
 ruff = ">=0.1.0"
-pytest = "*"
+pytest = ">=8.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]

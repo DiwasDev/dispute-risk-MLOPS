@@ -306,8 +306,14 @@ def train_model(
         include_scaler=config.model.include_scaler,
     )
 
-    # Set the MLflow experiment (creates it if it doesn't exist)
-    mlflow.set_experiment(config.experiment.name)
+    # Ensure there is an active run before logging.
+    # ZenML's MLflow Experiment Tracker will have started the run.
+    active_run = mlflow.active_run()
+    if active_run is None:
+        raise RuntimeError(
+            "No active MLflow run found. ZenML or the caller must start the run context."
+        )
+    run_id = active_run.info.run_id
 
     # Flatten hyperparameters for MLflow logging (MLflow expects flat key=value)
     active = config.model.active
@@ -320,79 +326,72 @@ def train_model(
     flat_params["include_scaler"] = config.model.include_scaler
     flat_params["random_seed"] = config.experiment.random_seed
 
-    # Open or resume MLflow run
-    run_context = (
-        mlflow.start_run(run_id=mlflow_run_id) if mlflow_run_id else mlflow.start_run()
+    # Log tags (searchable metadata, not metrics)
+    mlflow.set_tags(
+        {
+            "snapshot_id": config.data.snapshot_id,
+            "git_commit": git_commit,
+            "model_type": active,
+            "train_rows": len(X_train),
+            "train_positive_rate": f"{y_train.mean():.4f}",
+        }
     )
 
-    with run_context as run:
-        # Log tags (searchable metadata, not metrics)
-        mlflow.set_tags(
-            {
-                "snapshot_id": config.data.snapshot_id,
-                "git_commit": git_commit,
-                "model_type": active,
-                "train_rows": len(X_train),
-                "train_positive_rate": f"{y_train.mean():.4f}",
-            }
-        )
+    # Log all hyperparameters
+    mlflow.log_params(flat_params)
 
-        # Log all hyperparameters
-        mlflow.log_params(flat_params)
+    logger.info(
+        "Training %s on %d rows (%.1f%% positive). "
+        "MLflow run: %s | commit: %s | snapshot: %s",
+        active,
+        len(X_train),
+        y_train.mean() * 100,
+        run_id,
+        git_commit,
+        config.data.snapshot_id,
+    )
 
-        logger.info(
-            "Training %s on %d rows (%.1f%% positive). "
-            "MLflow run: %s | commit: %s | snapshot: %s",
-            active,
-            len(X_train),
-            y_train.mean() * 100,
-            run.info.run_id,
-            git_commit,
-            config.data.snapshot_id,
-        )
+    # Fit the pipeline — all preprocessing transformers are fitted here.
+    # After this call, the pipeline object contains:
+    #   - Fitted ColumnTransformer (imputation fill values, OHE vocabularies,
+    #     TargetEncoder statistics, scaler mean/std)
+    #   - Fitted estimator
+    # This is the single artifact that goes to serving.
+    pipeline.fit(X_train, y_train)
 
-        # Fit the pipeline — all preprocessing transformers are fitted here.
-        # After this call, the pipeline object contains:
-        #   - Fitted ColumnTransformer (imputation fill values, OHE vocabularies,
-        #     TargetEncoder statistics, scaler mean/std)
-        #   - Fitted estimator
-        # This is the single artifact that goes to serving.
-        pipeline.fit(X_train, y_train)
+    logger.info("Pipeline fit complete.")
 
-        logger.info("Pipeline fit complete.")
+    # Log the fitted pipeline as an MLflow artifact.
+    # mlflow.sklearn.log_model() serializes the pipeline with skops (MLflow 3.x).
+    # skops requires explicit trust declarations for custom transformer classes —
+    # a security measure so arbitrary code cannot be loaded from untrusted artifacts.
+    # We explicitly trust our three custom transformers from core/preprocessing.py.
+    # At serving time: mlflow.sklearn.load_model(run_id) → predict_proba().
+    _TRUSTED_TYPES = [
+        "core.preprocessing.DateFeatureExtractor",
+        "core.preprocessing.NarrativeLengthExtractor",
+        "core.preprocessing.SentinelImputer",
+        "sklearn.linear_model._logistic.LogisticRegression",
+        "sklearn.pipeline.Pipeline",
+        "sklearn.compose._column_transformer.ColumnTransformer",
+        "sklearn.preprocessing._encoders.OneHotEncoder",
+        "sklearn.preprocessing._target.TargetEncoder",
+        "sklearn.preprocessing._data.StandardScaler",
+        "sklearn.impute._base.SimpleImputer",
+        "xgboost.core.Booster",
+        "xgboost.sklearn.XGBClassifier",
+        "lightgbm.basic.Booster",
+        "lightgbm.sklearn.LGBMClassifier",
+        "collections.OrderedDict",
+    ]
+    mlflow.sklearn.log_model(
+        sk_model=pipeline,
+        artifact_path="model",
+        registered_model_name=None,  # Promote to registry explicitly in eval step
+        input_example=X_train.head(3),
+        skops_trusted_types=_TRUSTED_TYPES,
+    )
 
-        # Log the fitted pipeline as an MLflow artifact.
-        # mlflow.sklearn.log_model() serializes the pipeline with skops (MLflow 3.x).
-        # skops requires explicit trust declarations for custom transformer classes —
-        # a security measure so arbitrary code cannot be loaded from untrusted artifacts.
-        # We explicitly trust our three custom transformers from core/preprocessing.py.
-        # At serving time: mlflow.sklearn.load_model(run_id) → predict_proba().
-        _TRUSTED_TYPES = [
-            "core.preprocessing.DateFeatureExtractor",
-            "core.preprocessing.NarrativeLengthExtractor",
-            "core.preprocessing.SentinelImputer",
-            "sklearn.linear_model._logistic.LogisticRegression",
-            "sklearn.pipeline.Pipeline",
-            "sklearn.compose._column_transformer.ColumnTransformer",
-            "sklearn.preprocessing._encoders.OneHotEncoder",
-            "sklearn.preprocessing._target.TargetEncoder",
-            "sklearn.preprocessing._data.StandardScaler",
-            "sklearn.impute._base.SimpleImputer",
-            "xgboost.core.Booster",
-            "xgboost.sklearn.XGBClassifier",
-            "lightgbm.basic.Booster",
-            "lightgbm.sklearn.LGBMClassifier",
-            "collections.OrderedDict",
-        ]
-        mlflow.sklearn.log_model(
-            sk_model=pipeline,
-            artifact_path="model",
-            registered_model_name=None,  # Promote to registry explicitly in eval step
-            input_example=X_train.head(3),
-            skops_trusted_types=_TRUSTED_TYPES,
-        )
-
-        run_id = run.info.run_id
-        logger.info("Model artifact logged. MLflow run_id: %s", run_id)
+    logger.info("Model artifact logged. MLflow run_id: %s", run_id)
 
     return pipeline, run_id

@@ -453,6 +453,7 @@ class TestRunEvaluation:
         db = tmp_path / "mlflow.db"
         monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
         mlflow.set_tracking_uri(f"sqlite:///{db}")
+        mlflow.set_experiment("test-experiment")
 
     def test_returns_evaluation_result(self, tmp_path, monkeypatch):
         self._setup_mlflow(tmp_path, monkeypatch)
@@ -460,7 +461,10 @@ class TestRunEvaluation:
         pipe, X, y = _fitted_pipeline(n=200)
         cfg = load_config(_make_config_yaml(tmp_path))
 
-        result = run_evaluation(pipe, X, y, cfg, mlflow_run_id=None)
+        import mlflow
+
+        with mlflow.start_run():
+            result = run_evaluation(pipe, X, y, cfg, mlflow_run_id=None)
 
         assert isinstance(result, EvaluationResult)
 
@@ -469,7 +473,10 @@ class TestRunEvaluation:
 
         pipe, X, y = _fitted_pipeline(n=200)
         cfg = load_config(_make_config_yaml(tmp_path))
-        result = run_evaluation(pipe, X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            result = run_evaluation(pipe, X, y, cfg)
 
         assert 0.0 <= result.pr_auc <= 1.0
 
@@ -478,7 +485,10 @@ class TestRunEvaluation:
 
         pipe, X, y = _fitted_pipeline(n=200)
         cfg = load_config(_make_config_yaml(tmp_path))
-        result = run_evaluation(pipe, X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            result = run_evaluation(pipe, X, y, cfg)
 
         assert result.pr_auc_ci.lower <= result.pr_auc_ci.upper
 
@@ -487,7 +497,10 @@ class TestRunEvaluation:
 
         pipe, X, y = _fitted_pipeline(n=200)
         cfg = load_config(_make_config_yaml(tmp_path))
-        result = run_evaluation(pipe, X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            result = run_evaluation(pipe, X, y, cfg)
 
         assert 0.0 < result.optimal_threshold < 1.0
 
@@ -496,7 +509,10 @@ class TestRunEvaluation:
 
         pipe, X, y = _fitted_pipeline(n=300)
         cfg = load_config(_make_config_yaml(tmp_path))
-        result = run_evaluation(pipe, X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            result = run_evaluation(pipe, X, y, cfg)
 
         # Config has slice_columns = ["Product", "Submitted via"] — both in X
         assert len(result.slice_results) > 0
@@ -506,7 +522,10 @@ class TestRunEvaluation:
 
         pipe, X, y = _fitted_pipeline(n=200)
         cfg = load_config(_make_config_yaml(tmp_path))
-        result = run_evaluation(pipe, X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            result = run_evaluation(pipe, X, y, cfg)
 
         # Should document the SMOTE decision
         assert "SMOTE" in result.imbalance_decision
@@ -517,7 +536,10 @@ class TestRunEvaluation:
 
         pipe, X, y = _fitted_pipeline(n=200)
         cfg = load_config(_make_config_yaml(tmp_path))
-        result = run_evaluation(pipe, X, y, cfg)
+        import mlflow
+
+        with mlflow.start_run():
+            result = run_evaluation(pipe, X, y, cfg)
 
         lines = result.summary_lines()
         assert len(lines) >= 7  # At minimum the 7 global metric lines

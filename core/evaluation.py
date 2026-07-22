@@ -366,22 +366,57 @@ def tune_threshold(
     """
     # Use precision-recall curve thresholds — these are the natural breakpoints
     # where predictions change class, so they cover the important range without
-    # a brute-force grid. Augment with a coarse grid for safety.
+    # a brute-force grid.
+    #
+    # Vectorized F-beta computation: precision_recall_curve gives us P and R at
+    # every threshold in one pass. F-beta is a closed-form function of P and R:
+    #   F_beta = (1 + beta^2) * P * R / (beta^2 * P + R)
+    # This avoids calling fbeta_score() O(n_samples) times (one per threshold),
+    # which degrades to O(n_samples^2) and makes the evaluate step take hours
+    # on large validation sets (e.g. 60k rows → 60k thresholds × 60k comparisons).
     if thresholds is None:
-        _, _, pr_thresholds = precision_recall_curve(y_true, y_proba)
-        coarse_grid = np.arange(0.05, 0.95, 0.01)
-        thresholds = np.unique(np.concatenate([pr_thresholds, coarse_grid]))
-        thresholds = np.clip(thresholds, 0.01, 0.99)
+        pr_precisions, pr_recalls, pr_thresholds = precision_recall_curve(
+            y_true, y_proba
+        )
+        # precision_recall_curve appends a sentinel (precision=1, recall=0) at the
+        # end with no corresponding threshold entry. Exclude it.
+        p_arr = pr_precisions[:-1]
+        r_arr = pr_recalls[:-1]
 
-    best_threshold = 0.5
-    best_f2 = 0.0
+        denom = beta**2 * p_arr + r_arr
+        with np.errstate(divide="ignore", invalid="ignore"):
+            f2_arr = np.where(
+                denom > 0,
+                (1 + beta**2) * p_arr * r_arr / denom,
+                0.0,
+            )
 
-    for t in thresholds:
-        y_pred = (y_proba >= t).astype(int)
-        f2 = fbeta_score(y_true, y_pred, beta=beta, zero_division=0.0)
-        if f2 > best_f2:
-            best_f2 = f2
-            best_threshold = float(t)
+        if len(f2_arr) > 0:
+            best_idx = int(np.argmax(f2_arr))
+            best_threshold = float(np.clip(pr_thresholds[best_idx], 0.01, 0.99))
+            best_f2 = float(f2_arr[best_idx])
+        else:
+            best_threshold = 0.5
+            best_f2 = 0.0
+
+        # Augment with a coarse grid to catch edge cases outside the PR curve range
+        coarse_grid = np.arange(0.05, 0.95, 0.05)
+        for t in coarse_grid:
+            y_pred = (y_proba >= t).astype(int)
+            f2 = fbeta_score(y_true, y_pred, beta=beta, zero_division=0.0)
+            if f2 > best_f2:
+                best_f2 = f2
+                best_threshold = float(t)
+    else:
+        # Caller provided explicit thresholds — use the original loop (small sets in tests)
+        best_threshold = 0.5
+        best_f2 = 0.0
+        for t in thresholds:
+            y_pred = (y_proba >= t).astype(int)
+            f2 = fbeta_score(y_true, y_pred, beta=beta, zero_division=0.0)
+            if f2 > best_f2:
+                best_f2 = f2
+                best_threshold = float(t)
 
     metrics = compute_threshold_metrics(y_true, y_proba, best_threshold, beta=beta)
     logger.info(
@@ -702,69 +737,65 @@ def _log_to_mlflow(
       - imbalance_decision (full text)
       - n_val_rows, val_positive_rate
     """
-    mlflow.set_experiment(config.experiment.name)
+    active_run = mlflow.active_run()
+    if active_run is None:
+        raise RuntimeError(
+            "No active MLflow run found. ZenML or the caller must start the run context."
+        )
+    run_id = active_run.info.run_id
 
-    run_ctx = (
-        mlflow.start_run(run_id=mlflow_run_id) if mlflow_run_id else mlflow.start_run()
+    # Core metrics
+    mlflow.log_metrics(
+        {
+            "pr_auc": result.pr_auc,
+            "pr_auc_ci_lower": result.pr_auc_ci.lower,
+            "pr_auc_ci_upper": result.pr_auc_ci.upper,
+            "roc_auc": result.roc_auc,
+            "optimal_threshold": result.optimal_threshold,
+            "precision_at_threshold": result.threshold_metrics.precision,
+            "recall_at_threshold": result.threshold_metrics.recall,
+            "f2_at_threshold": result.threshold_metrics.f2,
+            "f1_at_threshold": result.threshold_metrics.f1,
+            "recall_at_p40": result.recall_at_target_precision,
+            "flagged_rate": result.threshold_metrics.flagged_rate,
+        }
     )
 
-    with run_ctx:
-        # Core metrics
-        mlflow.log_metrics(
-            {
-                "pr_auc": result.pr_auc,
-                "pr_auc_ci_lower": result.pr_auc_ci.lower,
-                "pr_auc_ci_upper": result.pr_auc_ci.upper,
-                "roc_auc": result.roc_auc,
-                "optimal_threshold": result.optimal_threshold,
-                "precision_at_threshold": result.threshold_metrics.precision,
-                "recall_at_threshold": result.threshold_metrics.recall,
-                "f2_at_threshold": result.threshold_metrics.f2,
-                "f1_at_threshold": result.threshold_metrics.f1,
-                "recall_at_p40": result.recall_at_target_precision,
-                "flagged_rate": result.threshold_metrics.flagged_rate,
-            }
-        )
-
-        # Confusion matrix components
-        mlflow.log_metrics(
-            {
-                "tp": result.threshold_metrics.tp,
-                "fp": result.threshold_metrics.fp,
-                "fn": result.threshold_metrics.fn,
-                "tn": result.threshold_metrics.tn,
-            }
-        )
-
-        # Slice metrics — logged with prefix for easy filtering in MLflow UI
-        import re
-
-        for sr in result.slice_results:
-            if sr.pr_auc is not None:
-                safe_col = sr.slice_column.replace(" ", "_").replace("?", "")
-                safe_val = str(sr.slice_value).replace(" ", "_")[:20]
-                prefix = f"slice_{safe_col}_{safe_val}"
-                prefix = re.sub(r"[^a-zA-Z0-9_\-\.\:\/ ]", "_", prefix)
-                mlflow.log_metrics(
-                    {
-                        f"{prefix}_pr_auc": sr.pr_auc,
-                        f"{prefix}_f2": sr.f2_at_threshold or 0.0,
-                        f"{prefix}_recall": sr.recall_at_threshold or 0.0,
-                        f"{prefix}_precision": sr.precision_at_threshold or 0.0,
-                        f"{prefix}_n": sr.n_samples,
-                    }
-                )
-
-        # Tags
-        mlflow.set_tags(
-            {
-                "imbalance_decision": result.imbalance_decision[
-                    :250
-                ],  # MLflow tag limit
-                "eval_bootstrap_iters": config.evaluation.bootstrap_iterations,
-            }
-        )
-
-    logger.info(
-        "Evaluation metrics logged to MLflow run: %s", mlflow_run_id or "new run"
+    # Confusion matrix components
+    mlflow.log_metrics(
+        {
+            "tp": result.threshold_metrics.tp,
+            "fp": result.threshold_metrics.fp,
+            "fn": result.threshold_metrics.fn,
+            "tn": result.threshold_metrics.tn,
+        }
     )
+
+    # Slice metrics — logged with prefix for easy filtering in MLflow UI
+    import re
+
+    for sr in result.slice_results:
+        if sr.pr_auc is not None:
+            safe_col = sr.slice_column.replace(" ", "_").replace("?", "")
+            safe_val = str(sr.slice_value).replace(" ", "_")[:20]
+            prefix = f"slice_{safe_col}_{safe_val}"
+            prefix = re.sub(r"[^a-zA-Z0-9_\-\.\:\/ ]", "_", prefix)
+            mlflow.log_metrics(
+                {
+                    f"{prefix}_pr_auc": sr.pr_auc,
+                    f"{prefix}_f2": sr.f2_at_threshold or 0.0,
+                    f"{prefix}_recall": sr.recall_at_threshold or 0.0,
+                    f"{prefix}_precision": sr.precision_at_threshold or 0.0,
+                    f"{prefix}_n": sr.n_samples,
+                }
+            )
+
+    # Tags
+    mlflow.set_tags(
+        {
+            "imbalance_decision": result.imbalance_decision[:250],  # MLflow tag limit
+            "eval_bootstrap_iters": config.evaluation.bootstrap_iterations,
+        }
+    )
+
+    logger.info("Evaluation metrics logged to MLflow run: %s", run_id)
