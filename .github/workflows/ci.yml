@@ -49,7 +49,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: uv pip install --system ".[dev]"
+        run: uv pip install --system -e ".[dev]"
 
       - name: Code style (black)
         run: black --check .
