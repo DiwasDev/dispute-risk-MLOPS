@@ -185,14 +185,15 @@ class BatchPredictionResponse(BaseModel):
     predictions: list[PredictionResponse]
     count: int
 
-    class HealthResponse(BaseModel):
-        """Health check response including golden input parity status."""
 
-        status: str  # "healthy" | "degraded" | "unhealthy"
-        model_version: str
-        model_alias: str
-        golden_input_passed: bool
-        message: str
+class HealthResponse(BaseModel):
+    """Health check response including golden input parity status."""
+
+    status: str  # "healthy" | "degraded" | "unhealthy"
+    model_version: str
+    model_alias: str
+    golden_input_passed: bool
+    message: str
 
 
 class DriftRequest(BaseModel):

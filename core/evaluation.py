@@ -737,11 +737,14 @@ def _log_to_mlflow(
         )
 
         # Slice metrics — logged with prefix for easy filtering in MLflow UI
+        import re
+
         for sr in result.slice_results:
             if sr.pr_auc is not None:
                 safe_col = sr.slice_column.replace(" ", "_").replace("?", "")
                 safe_val = str(sr.slice_value).replace(" ", "_")[:20]
                 prefix = f"slice_{safe_col}_{safe_val}"
+                prefix = re.sub(r"[^a-zA-Z0-9_\-\.\:\/ ]", "_", prefix)
                 mlflow.log_metrics(
                     {
                         f"{prefix}_pr_auc": sr.pr_auc,
