@@ -51,6 +51,9 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
+      - name: Install black explicitly
+        run: uv pip install --system black ruff pytest
+
       - name: Code style (black)
         run: black --check .
 
