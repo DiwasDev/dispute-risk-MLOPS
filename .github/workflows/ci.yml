@@ -44,10 +44,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+        
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv pip install --system ".[dev]"
 
       - name: Code style (black)
         run: black --check .
@@ -76,10 +78,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv pip install --system .
 
       - name: Verify FastAPI app imports and routes
         run: |
@@ -137,10 +141,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv pip install --system .
 
       - name: Verify rollback script imports
         run: |
