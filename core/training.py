@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 import mlflow
+from mlflow import client
 import mlflow.sklearn
 import pandas as pd
 import yaml
@@ -308,12 +309,25 @@ def train_model(
 
     # Ensure there is an active run before logging.
     # ZenML's MLflow Experiment Tracker will have started the run.
+    logger.info("Tracking URI: %s", mlflow.get_tracking_uri())
+
+    logger.info("Artifact URI: %s", mlflow.get_artifact_uri())
+
+    logger.info("Experiment: %s", mlflow.get_experiment_by_name("complaint-dispute-prediction"))
+
+    logger.info("Active run: %s", mlflow.active_run())
     active_run = mlflow.active_run()
     if active_run is None:
         raise RuntimeError(
             "No active MLflow run found. ZenML or the caller must start the run context."
         )
     run_id = active_run.info.run_id
+
+    client = mlflow.MlflowClient()
+
+    run = client.get_run(run_id)
+
+    logger.info("Run experiment id = %s", run.info.experiment_id)
 
     # Flatten hyperparameters for MLflow logging (MLflow expects flat key=value)
     active = config.model.active

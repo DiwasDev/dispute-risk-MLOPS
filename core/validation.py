@@ -10,15 +10,126 @@ Design principles:
 - Fail fast and loudly: a ValidationError stops the pipeline immediately.
 - Log every anomaly: silent degradation is the #1 production failure mode.
 - Baseline null rates from training data to catch upstream pipeline breaks.
+- Platform-agnostic loading: swap data sources via the DataLoaderStrategy
+  without touching validation logic. pd.read_csv is ONLY used inside
+  CSVDataLoader — never elsewhere in this module.
 """
 
 from __future__ import annotations
 
+import io
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    # Imported only for type hints — azure-storage-blob is optional at
+    # runtime when using CSVDataLoader.
+    from azure.storage.blob import BlobServiceClient
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Data loading strategies
+# ---------------------------------------------------------------------------
+
+
+class DataLoaderStrategy(ABC):
+    """
+    Abstract base for all data loading strategies.
+
+    Concrete subclasses encapsulate WHERE and HOW data is fetched.
+    Validation logic in this module is completely decoupled from the
+    source — it only ever receives a plain pd.DataFrame.
+
+    To add a new source (S3, GCS, database, …) implement this ABC and
+    pass an instance to load_and_validate(). No other changes required.
+    """
+
+    @abstractmethod
+    def load(self) -> pd.DataFrame:
+        """
+        Load data from the configured source and return a raw DataFrame.
+
+        Raises
+        ------
+        Any source-specific exception (FileNotFoundError, EnvironmentError,
+        azure.core.exceptions.*, …) — callers should not swallow these.
+        """
+
+
+class CSVDataLoader(DataLoaderStrategy):
+    """
+    Load data from a local (or network-mounted) CSV file.
+
+    This is the default strategy. pd.read_csv is called ONLY here.
+
+    Parameters
+    ----------
+    path : str
+        Absolute or relative path to the CSV file.
+    """
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+    def load(self) -> pd.DataFrame:
+        logger.info("CSVDataLoader: reading '%s'", self.path)
+        df = pd.read_csv(self.path, low_memory=False)
+        logger.info("CSVDataLoader: loaded %d rows, %d columns.", len(df), len(df.columns))
+        return df
+
+
+class AzureBlobDataLoader(DataLoaderStrategy):
+    """
+    Load data from Azure Blob Storage.
+
+    Streams the blob content into memory and parses it as CSV — no temp
+    files, no local disk dependency. The BlobServiceClient is supplied by
+    the caller (typically via scripts/azure_connection.AzureConnection) so
+    this class has no knowledge of credentials.
+
+    Parameters
+    ----------
+    client : BlobServiceClient
+        An authenticated azure-storage-blob BlobServiceClient.
+    container_name : str
+        Name of the blob container (e.g. "ml-data").
+    blob_name : str
+        Full blob path inside the container (e.g. "raw/complaints.csv").
+    """
+
+    def __init__(
+        self,
+        client: "BlobServiceClient",
+        container_name: str,
+        blob_name: str,
+    ) -> None:
+        self.client = client
+        self.container_name = container_name
+        self.blob_name = blob_name
+
+    def load(self) -> pd.DataFrame:
+        logger.info(
+            "AzureBlobDataLoader: downloading '%s' from container '%s'.",
+            self.blob_name,
+            self.container_name,
+        )
+        blob_client = self.client.get_blob_client(
+            container=self.container_name, blob=self.blob_name
+        )
+        stream = blob_client.download_blob()
+        content = stream.readall()
+        df = pd.read_csv(io.BytesIO(content), low_memory=False)
+        logger.info(
+            "AzureBlobDataLoader: loaded %d rows, %d columns.", len(df), len(df.columns)
+        )
+        return df
+
 
 logger = logging.getLogger(__name__)
 
@@ -376,13 +487,13 @@ def validate_raw_data(df: pd.DataFrame, *, strict: bool = True) -> ValidationRep
 
 
 def load_and_validate(
-    csv_path: str,
+    loader: DataLoaderStrategy,
     *,
     drop_leakage: bool = True,
     strict: bool = True,
 ) -> tuple[pd.DataFrame, ValidationReport]:
     """
-    Load raw CSV data and immediately validate it.
+    Load raw data via a DataLoaderStrategy and immediately validate it.
 
     This is the single entry point for data loading. It enforces the
     following contract at the boundary:
@@ -390,10 +501,17 @@ def load_and_validate(
     2. Leakage columns are removed before any downstream processing.
     3. Quality anomalies are logged and surfaced in the report.
 
+    The loader parameter decouples the data source from validation logic.
+    Pass CSVDataLoader(path) for local files or AzureBlobDataLoader(...)
+    for Blob Storage. Adding a new source means implementing DataLoaderStrategy
+    — this function never changes.
+
     Parameters
     ----------
-    csv_path : str
-        Path to the raw CSV file.
+    loader : DataLoaderStrategy
+        Concrete loader that knows how to fetch raw data. Use CSVDataLoader
+        for local CSV files (the default for training pipelines) or
+        AzureBlobDataLoader for Azure Blob Storage.
     drop_leakage : bool
         If True (default), leakage columns are dropped from the returned
         DataFrame. Set False only for audit/debugging.
@@ -406,8 +524,8 @@ def load_and_validate(
     (df, report) : tuple[pd.DataFrame, ValidationReport]
         Cleaned DataFrame (leakage columns dropped) and the validation report.
     """
-    logger.info("Loading data from: %s", csv_path)
-    df = pd.read_csv(csv_path, low_memory=False)
+    logger.info("Loading data via %s.", loader.__class__.__name__)
+    df = loader.load()
     logger.info("Loaded %d rows, %d columns.", len(df), len(df.columns))
 
     report = validate_raw_data(df, strict=strict)

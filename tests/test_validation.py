@@ -18,8 +18,11 @@ import pytest
 from core.validation import (
     TARGET_COLUMN,
     LEAKAGE_COLUMNS,
+    CSVDataLoader,
+    DataLoaderStrategy,
     ValidationError,
     compute_null_baseline,
+    load_and_validate,
     validate_against_baseline,
     validate_raw_data,
 )
@@ -226,3 +229,79 @@ class TestValidationReport:
         df = _make_valid_df().drop(columns=["Issue"])
         report = validate_raw_data(df, strict=False)
         assert "FAIL" in report.summary()
+
+
+# ---------------------------------------------------------------------------
+# Data loading strategies
+# ---------------------------------------------------------------------------
+
+
+class TestCSVDataLoader:
+    def test_loads_csv_and_returns_dataframe(self, tmp_path):
+        """CSVDataLoader must read a CSV and return a DataFrame with the same shape."""
+        df = _make_valid_df()
+        csv_file = tmp_path / "test.csv"
+        df.to_csv(csv_file, index=False)
+
+        loader = CSVDataLoader(path=str(csv_file))
+        result = loader.load()
+
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == len(df)
+        assert list(result.columns) == list(df.columns)
+
+    def test_missing_file_raises(self, tmp_path):
+        loader = CSVDataLoader(path=str(tmp_path / "nonexistent.csv"))
+        with pytest.raises(FileNotFoundError):
+            loader.load()
+
+    def test_is_data_loader_strategy(self):
+        """CSVDataLoader must satisfy the DataLoaderStrategy ABC."""
+        loader = CSVDataLoader(path="dummy.csv")
+        assert isinstance(loader, DataLoaderStrategy)
+
+
+class TestLoadAndValidateWithStrategy:
+    def test_csv_loader_end_to_end(self, tmp_path):
+        """load_and_validate works with CSVDataLoader as strategy."""
+        df = _make_valid_df()
+        csv_file = tmp_path / "complaints.csv"
+        df.to_csv(csv_file, index=False)
+
+        loader = CSVDataLoader(path=str(csv_file))
+        result_df, report = load_and_validate(loader, drop_leakage=False, strict=True)
+
+        assert report.passed
+        assert len(result_df) == len(df)
+
+    def test_custom_strategy_is_accepted(self, tmp_path):
+        """Any DataLoaderStrategy subclass can be passed to load_and_validate."""
+
+        class InMemoryLoader(DataLoaderStrategy):
+            def __init__(self, data: pd.DataFrame) -> None:
+                self.data = data
+
+            def load(self) -> pd.DataFrame:
+                return self.data.copy()
+
+        df = _make_valid_df()
+        loader = InMemoryLoader(data=df)
+        result_df, report = load_and_validate(loader, strict=False)
+
+        assert report.passed
+        assert len(result_df) > 0
+
+    def test_leakage_dropped_by_default(self, tmp_path):
+        """load_and_validate drops leakage columns when drop_leakage=True."""
+
+        class LeakyLoader(DataLoaderStrategy):
+            def load(self) -> pd.DataFrame:
+                df = _make_valid_df()
+                df["Timely response?"] = "Yes"
+                return df
+
+        loader = LeakyLoader()
+        result_df, report = load_and_validate(loader, drop_leakage=True, strict=False)
+
+        assert "Timely response?" not in result_df.columns
+        assert len(report.leakage_warnings) == 1

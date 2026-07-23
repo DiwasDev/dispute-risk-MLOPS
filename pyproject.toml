@@ -26,6 +26,9 @@ pymysql = ">=1.1.1,<1.2.0"
 jsonschema = ">=4.0.0"
 # Data + monitoring
 evidently = "0.7.21"
+# Azure Blob Storage — required for AzureBlobDataLoader (optional at runtime;
+# only imported when source_type="azure" is passed to ingest_data step).
+azure-storage-blob = ">=12.19.0,<13.0.0"
 # ML
 scikit-learn = "1.9.0"
 xgboost = ">=3.0.0,<3.3.0"
