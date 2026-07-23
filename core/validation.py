@@ -80,7 +80,9 @@ class CSVDataLoader(DataLoaderStrategy):
     def load(self) -> pd.DataFrame:
         logger.info("CSVDataLoader: reading '%s'", self.path)
         df = pd.read_csv(self.path, low_memory=False)
-        logger.info("CSVDataLoader: loaded %d rows, %d columns.", len(df), len(df.columns))
+        logger.info(
+            "CSVDataLoader: loaded %d rows, %d columns.", len(df), len(df.columns)
+        )
         return df
 
 
